@@ -26,3 +26,4 @@ build/
 *.docx
 *.db
 static/vue.global.prod.js
+*.log

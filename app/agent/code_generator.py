@@ -2,6 +2,9 @@ import json
 import pandas as pd
 from app.agent import prompts, llm_client, sandbox
 from app.config import settings
+from app.logger import get_logger
+
+log = get_logger(__name__)
 
 
 def generate_and_execute(
@@ -36,12 +39,14 @@ def generate_and_execute(
     for attempt in range(max_attempts):
         # 1. 调用 LLM 生成代码
         try:
+            log.info("LLM call attempt %d/%d", attempt + 1, max_attempts)
             result = llm_client.chat_structured(
                 system_prompt=prompts.SYSTEM_PROMPT,
                 user_prompt=user_prompt,
             )
         except Exception as e:
-            return {"success": False, "error": f"LLM 调用失败: {e}", "retries": attempt}
+            log.error("LLM call failed: %s", e)
+            return {"success": False, "error": "LLM 调用失败: " + str(e), "retries": attempt}
 
         code = result.get("code", "")
         if not code:
@@ -56,6 +61,7 @@ def generate_and_execute(
 
         # 2. 安全扫描
         issues = sandbox.scan_code(code)
+        log.debug("Code scan: %d issues found", len(issues))
         if issues:
             user_prompt = prompts.RETRY_PROMPT.format(
                 previous_code=code,
@@ -66,7 +72,9 @@ def generate_and_execute(
             continue
 
         # 3. 沙箱执行
+        log.info("Executing generated code (attempt %d)...", attempt + 1)
         exec_result = sandbox.execute(code, source_df)
+        log.debug("Sandbox result: success=%s", exec_result["success"])
 
         if exec_result["success"]:
             return {

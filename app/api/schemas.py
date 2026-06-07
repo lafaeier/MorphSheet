@@ -62,6 +62,9 @@ class ConvertResponse(BaseModel):
     diff: Optional[dict] = None
     detected_issues: Optional[list[DataIssue]] = None
     error: Optional[str] = None
+    code: Optional[str] = None
+    explanation: Optional[str] = None
+    retries: Optional[int] = None
 
 
 class ConfirmActionRequest(BaseModel):

@@ -48,7 +48,7 @@
         </div>
       </div>
 
-      <div id="diffView" class="diff-container" style="display:none">
+      <div id="diffView" class="diff-container hidden">
         <div class="diff-header">
           <span id="diffSummary">数据对比预览</span>
           <div class="diff-actions">
@@ -60,6 +60,15 @@
           <div class="diff-panel left"><h3>源数据</h3><div class="diff-table-wrapper" id="sourceTable"></div></div>
           <div class="diff-panel right"><h3>转换后</h3><div class="diff-table-wrapper" id="targetTable"></div></div>
         </div>
+      </div>
+
+      <!-- AI 生成的代码面板 -->
+      <div class="code-panel" id="codePanel">
+        <div class="code-panel-header" id="codePanelHeader">
+          <span>📝 AI 生成的 Pandas 代码</span>
+          <span id="codePanelToggle">展开</span>
+        </div>
+        <div class="code-panel-body" id="codePanelBody" style="display:none"></div>
       </div>
     </main>
 
