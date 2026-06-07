@@ -94,8 +94,25 @@ class Orchestrator:
             log.info("Convert success: task=%s retries=%d rows=%d->%d",
                      task_id[:8], result["retries"],
                      len(source_df), len(result["result_df"]))
-            # 记录 LLM 生成的代码到日志，便于排查
             log.debug("Generated code:\n%s", result.get("code", "")[:2000])
+
+            # 后置脏数据检测: 检查是否有原始值被强制转换为 NaN/NaT
+            dirty = _detect_coerced_data(source_df, result["result_df"])
+            if dirty:
+                log.info("Dirty data detected: %d issues", len(dirty))
+                send({"type": "blocking", "message": "发现异常数据，需要您的决策",
+                      "issues": dirty})
+                self.tasks[task_id].update({
+                    "result_df": result["result_df"],
+                    "code": result["code"],
+                    "status": "awaiting_human_confirmation",
+                    "pending_issues": dirty,
+                })
+                return to_json_safe({
+                    "status": "awaiting_human_confirmation",
+                    "task_id": task_id,
+                    "detected_issues": dirty,
+                })
 
             send({"type": "phase", "phase": "computing_diff", "message": "正在生成 Diff 对比..."})
             diff_data = diff_module.compute(source_df, result["result_df"])
@@ -154,6 +171,36 @@ class Orchestrator:
 
     def get_task(self, task_id: str) -> dict | None:
         return self.tasks.get(task_id)
+
+
+def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
+                         max_issues: int = 7) -> list[dict]:
+    """检测被强制转换的脏数据：扫描结果 DataFrame 中的 NaN/NaT。"""
+    issues = []
+
+    for col in result_df.columns:
+        if len(issues) >= max_issues:
+            break
+        for i in range(len(result_df)):
+            if len(issues) >= max_issues:
+                break
+            res_val = result_df.iloc[i][col]
+
+            # 检测 NaN/NaT
+            is_bad = pd.isna(res_val)
+            if not is_bad and isinstance(res_val, str):
+                is_bad = ('NaT' in res_val or res_val == 'nan')
+
+            if is_bad:
+                issues.append({
+                    "row": i,
+                    "column": str(col),
+                    "value": "NaN (转换失败)",
+                    "error": "第 {} 行 \"{}\" 的值无法转换，结果为空".format(i, str(col)),
+                    "suggested_action": "跳过第 {} 行，或手动修正 \"{}\" 列的值".format(i, str(col)),
+                })
+
+    return issues
 
 
 orchestrator = Orchestrator()

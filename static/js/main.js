@@ -1,12 +1,9 @@
 /**
- * MorphSheet - Vanilla JS Application
+ * MorphSheet - Vanilla JS Application (Tab-based UI)
  */
 (function () {
   'use strict';
 
-  // ============================================================
-  // State
-  // ============================================================
   var state = {
     currentFile: null,
     targetFormat: '',
@@ -14,11 +11,9 @@
     currentTask: null,
     taskPhase: 'idle',
     chatLoading: false,
+    activeTab: 'chat',
   };
 
-  // ============================================================
-  // DOM Refs
-  // ============================================================
   var $ = function (id) { return document.getElementById(id); };
 
   var dom = {};
@@ -30,8 +25,6 @@
     dom.targetFmt     = $('targetFormat');
     dom.targetEnc     = $('targetEncoding');
     dom.btnConvert    = $('btnConvert');
-    dom.chatView      = $('chatView');
-    dom.diffView      = $('diffView');
     dom.chatMsgs      = $('chatMessages');
     dom.chatInput     = $('chatInput');
     dom.btnSend       = $('btnSend');
@@ -45,10 +38,11 @@
     dom.modalBody     = $('modalBody');
     dom.toastContainer = $('toastContainer');
     dom.themeToggle   = $('themeToggle');
-    dom.codePanel     = $('codePanel');
     dom.codePanelBody = $('codePanelBody');
-    dom.codePanelToggle = $('codePanelToggle');
-    dom.codePanelHeader = $('codePanelHeader');
+    dom.mainTabBar    = $('mainTabBar');
+    dom.saveSkillLabel = $('saveSkillLabel');
+    dom.saveSkillCheck = $('saveSkillCheck');
+    dom.saveSkillName  = $('saveSkillName');
   }
 
   // ============================================================
@@ -64,61 +58,23 @@
   }
 
   // ============================================================
-  // View Switching
+  // Tab Navigation (VS Code style)
   // ============================================================
-  function showChat() {
-    dom.chatView.classList.remove('hidden');
-    dom.diffView.classList.add('hidden');
+  function switchTab(tabName) {
+    state.activeTab = tabName;
+    // Update tab buttons
+    dom.mainTabBar.querySelectorAll('.main-tab').forEach(function (btn) {
+      btn.classList.toggle('active', btn.dataset.view === tabName);
+    });
+    // Update tab views
+    document.querySelectorAll('.tab-view').forEach(function (v) {
+      v.classList.toggle('active', v.id === 'view-' + tabName);
+    });
   }
 
-  function showDiffView() {
-    dom.chatView.classList.add('hidden');
-    dom.diffView.classList.remove('hidden');
-  }
-
-  // ============================================================
-  // AI Code Panel
-  // ============================================================
-  function showCode(code, explanation, retries) {
-    var html = '';
-    if (explanation) {
-      html += '<span class="comment"># ' + esc(explanation) + '</span>\n';
-      html += '<span class="comment"># 重试次数: ' + retries + '</span>\n\n';
-    }
-    html += highlightPython(esc(code));
-    dom.codePanelBody.innerHTML = html;
-    dom.codePanel.classList.add('visible');
-    dom.codePanelToggle.textContent = '收起';
-    dom.codePanelBody.style.display = '';
-  }
-
-  function highlightPython(code) {
-    // Simple syntax highlighting
-    var lines = code.split('\n');
-    return lines.map(function (line) {
-      // Comments
-      if (/^\s*#/.test(line)) return '<span class="comment">' + line + '</span>';
-      // Keywords
-      line = line.replace(/\b(def|import|from|return|if|else|elif|for|while|in|as|try|except|pass|continue|break|and|or|not|True|False|None)\b/g,
-        '<span class="keyword">$1</span>');
-      // Strings
-      line = line.replace(/(["'])(?:(?!\1)[^\\]|\\.)*\1/g,
-        '<span class="string">$&</span>');
-      // Numbers
-      line = line.replace(/\b(\d+\.?\d*)\b/g,
-        '<span class="number">$1</span>');
-      return line;
-    }).join('\n');
-  }
-
-  function toggleCodePanel() {
-    if (dom.codePanelBody.style.display === 'none') {
-      dom.codePanelBody.style.display = '';
-      dom.codePanelToggle.textContent = '收起';
-    } else {
-      dom.codePanelBody.style.display = 'none';
-      dom.codePanelToggle.textContent = '展开';
-    }
+  function enableTab(tabName) {
+    var btn = dom.mainTabBar.querySelector('[data-view="' + tabName + '"]');
+    if (btn) btn.disabled = false;
   }
 
   // ============================================================
@@ -146,7 +102,6 @@
   // Status Steps
   // ============================================================
   var stepOrder = ['uploaded', 'analyzing', 'generating', 'executing', 'diffing', 'awaiting'];
-
   function setStep(phase) {
     state.taskPhase = phase;
     var found = false;
@@ -158,9 +113,9 @@
       else if (!found) { el.className = 'step done'; }
     });
     dom.statusSteps.querySelectorAll('.step-icon').forEach(function (icon) {
-      var parent = icon.parentElement;
-      if (parent.classList.contains('done')) icon.textContent = '●';
-      else if (parent.classList.contains('active')) icon.textContent = '◉';
+      var p = icon.parentElement;
+      if (p.classList.contains('done')) icon.textContent = '●';
+      else if (p.classList.contains('active')) icon.textContent = '◉';
       else icon.textContent = '○';
     });
   }
@@ -171,7 +126,7 @@
   function handleFile(file) {
     var ext = file.name.split('.').pop().toLowerCase();
     if (['xlsx','xls','csv'].indexOf(ext) === -1) {
-      toast('不支持的文件格式: .' + ext, 'error'); return;
+      toast('不支持: .' + ext, 'error'); return;
     }
     setStep('uploaded');
     dom.uploadText.textContent = '上传中...';
@@ -179,12 +134,12 @@
 
     API.upload(file).then(function (data) {
       state.currentFile = data;
-      dom.uploadText.textContent = file.name + ' (' + data.schema_info.row_count + '行, ' + data.schema_info.columns.length + '列)';
+      dom.uploadText.textContent = file.name + ' (' + data.schema_info.row_count + '行)';
       dom.uploadIcon.textContent = '✅';
       dom.chatInput.disabled = false;
       dom.btnSend.disabled = false;
       dom.btnConvert.disabled = !state.targetFormat;
-      addMsg('system', '文件已上传: <b>' + file.name + '</b><br>列: ' + data.schema_info.columns.join(', '));
+      addMsg('system', '已上传: <b>' + file.name + '</b><br>列: ' + data.schema_info.columns.join(', '));
     }).catch(function (e) {
       toast('上传失败: ' + e.message, 'error');
       dom.uploadText.textContent = '拖拽文件到此处，或点击选择';
@@ -206,7 +161,6 @@
     dom.chatInput.value = '';
     setLoading(true);
     setStep('analyzing');
-    dom.codePanel.classList.remove('visible');
 
     API.setTarget(state.currentFile.file_id, state.targetFormat, state.targetEncoding).then(function () {
       setStep('generating');
@@ -216,117 +170,175 @@
       if (result.status === 'awaiting_confirmation') {
         state.currentTask = result;
         setStep('awaiting');
-        showDiff(result);
-        if (result.code) {
-          showCode(result.code, result.explanation || '', result.retries || 0);
-        }
-        addMsg('system', '✅ 转换完成！请查看 Diff 视图确认结果。');
+        loadDiff(result);
+        loadCode(result);
+        enableTab('diff');
+        enableTab('code');
+        showExportButtons();
+        addMsg('system', '✅ 转换完成！点击上方 <b>Diff 对比</b> / <b>AI 代码</b> 标签查看详情。');
+      } else if (result.status === 'awaiting_human_confirmation') {
+        state.currentTask = result;
+        setStep('awaiting');
+        showModal(result.detected_issues || []);
+        addMsg('system', '⚠ 发现异常数据，请在弹窗中处理。');
       } else if (result.status === 'failed') {
         setStep('idle');
         addMsg('system', '❌ 转换失败: ' + (result.error || '未知错误'));
         toast('转换失败', 'error');
       }
     }).catch(function (e) {
-      setLoading(false);
-      setStep('idle');
+      setLoading(false); setStep('idle');
       addMsg('system', '❌ 转换失败: ' + e.message);
       toast('转换失败: ' + e.message, 'error');
     });
   }
 
   // ============================================================
+  // Show/Hide Export Controls
+  // ============================================================
+  function showExportButtons() {
+    dom.btnExport.style.display = '';
+    dom.btnCancel.style.display = '';
+    dom.saveSkillLabel.style.display = '';
+  }
+
+  function hideExportButtons() {
+    dom.btnExport.style.display = 'none';
+    dom.btnCancel.style.display = 'none';
+    dom.saveSkillLabel.style.display = 'none';
+    dom.saveSkillCheck.checked = false;
+    dom.saveSkillName.style.display = 'none';
+    dom.saveSkillName.value = '';
+  }
+
+  // ============================================================
   // Diff View
   // ============================================================
-  function showDiff(task) {
-    showDiffView();
+  function loadDiff(task) {
     var diff = task.diff || {};
     var preview = task.preview || {};
     var srcPreview = task.source_preview || state.currentFile.preview || {};
 
-    dom.diffSummary.textContent = '原始 ' + (diff.row_counts && diff.row_counts.original || '?') + ' 行 → 转换后 ' + (diff.row_counts && diff.row_counts.transformed || '?') + ' 行';
+    dom.diffSummary.textContent = '原始 ' + (diff.row_counts && diff.row_counts.original || '?') +
+      ' 行 → 转换后 ' + (diff.row_counts && diff.row_counts.transformed || '?') + ' 行';
 
-    // Escape HTML in column names and cell values
-    function escCol(col) { return String(col).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-    function escCell(val) {
-      if (val === null || val === undefined) return '';
-      return String(val).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    }
+    function ec(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function ecv(v) { return v == null ? '' : String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    var removedSet = {};
+    (diff.removed_rows || []).forEach(function (r) { removedSet[r] = true; });
+
+    var srcCols = (srcPreview.columns || []).map(ec);
+    var tgtCols = (preview.columns || []).map(ec);
+    var srcRows = srcPreview.rows || [];
+    var tgtRows = preview.rows || [];
 
     // Source table
-    renderTable(dom.sourceTable, (srcPreview.columns || []).map(escCol), srcPreview.rows || [], diff.removed_rows || [], escCell);
+    var h1 = '<table><thead><tr>';
+    srcCols.forEach(function (c) { h1 += '<th>' + c + '</th>'; });
+    h1 += '</tr></thead><tbody>';
+    srcRows.forEach(function (row, ri) {
+      h1 += '<tr' + (removedSet[ri] ? ' class="row-removed"' : '') + '>';
+      row.forEach(function (cell) { h1 += '<td>' + ecv(cell) + '</td>'; });
+      h1 += '</tr>';
+    });
+    h1 += '</tbody></table>';
+    dom.sourceTable.innerHTML = h1;
 
     // Target table
-    renderTable(dom.targetTable, (preview.columns || []).map(escCol), preview.rows || [], [], escCell);
+    var h2 = '<table><thead><tr>';
+    tgtCols.forEach(function (c) { h2 += '<th>' + c + '</th>'; });
+    h2 += '</tr></thead><tbody>';
+    tgtRows.forEach(function (row) {
+      h2 += '<tr>';
+      row.forEach(function (cell) { h2 += '<td>' + ecv(cell) + '</td>'; });
+      h2 += '</tr>';
+    });
+    h2 += '</tbody></table>';
+    dom.targetTable.innerHTML = h2;
   }
 
-  function renderTable(container, columns, rows, removedRows, cellFn) {
-    var removedSet = {};
-    (removedRows || []).forEach(function (r) { removedSet[r] = true; });
+  // ============================================================
+  // AI Code View
+  // ============================================================
+  function loadCode(task) {
+    var html = '';
+    if (task.explanation) {
+      html += '<span class="comment"># ' + esc(task.explanation) + '</span>\n';
+      html += '<span class="comment"># Retries: ' + (task.retries || 0) + '</span>\n\n';
+    }
+    html += highlightPython(task.code || '(no code)');
+    dom.codePanelBody.innerHTML = html;
+  }
 
-    var html = '<table><thead><tr>';
-    columns.forEach(function (c) { html += '<th>' + c + '</th>'; });
-    html += '</tr></thead><tbody>';
-    rows.forEach(function (row, ri) {
-      var cls = removedSet[ri] ? ' class="row-removed"' : '';
-      html += '<tr' + cls + '>';
-      row.forEach(function (cell) {
-        html += '<td>' + cellFn(cell) + '</td>';
-      });
-      html += '</tr>';
-    });
-    html += '</tbody></table>';
-    container.innerHTML = html;
+  function highlightPython(code) {
+    return esc(code).split('\n').map(function (line) {
+      if (/^\s*#/.test(line)) return '<span class="comment">' + line + '</span>';
+      line = line.replace(/\b(def|import|from|return|if|else|elif|for|while|in|as|try|except|pass|continue|break|and|or|not|True|False|None)\b/g,
+        '<span class="keyword">$1</span>');
+      line = line.replace(/(["'])(?:(?!\1)[^\\]|\\.)*\1/g, '<span class="string">$&</span>');
+      line = line.replace(/\b(\d+\.?\d*)\b/g, '<span class="number">$1</span>');
+      return line;
+    }).join('\n');
   }
 
   function esc(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   // ============================================================
-  // Export
+  // Export with save-as-skill
   // ============================================================
   function doExport() {
     if (!state.currentTask) return;
-    API.exportTask(state.currentTask.task_id, false, null).then(function (result) {
-      toast('导出成功: ' + result.file_path, 'success');
-      addMsg('system', '文件已导出: ' + result.file_path);
+    var saveAsSkill = dom.saveSkillCheck.checked;
+    var skillName = saveAsSkill ? (dom.saveSkillName.value.trim() || '未命名技能') : null;
+
+    API.exportTask(state.currentTask.task_id, saveAsSkill, skillName).then(function (result) {
+      var msg = '导出成功: ' + result.file_path;
+      if (result.skill_saved) msg += ' | 技能已保存 ✓';
+      toast(msg, 'success');
+      addMsg('system', msg);
       window.open(API.getDownloadUrl(state.currentTask.task_id), '_blank');
-      setStep('idle');
-      showChat();
-      dom.codePanel.classList.remove('visible');
-      state.currentTask = null;
+      resetAfterExport();
     }).catch(function (e) {
       toast('导出失败: ' + e.message, 'error');
     });
   }
 
-  function cancelDiff() {
-    showChat();
-    state.currentTask = null;
+  function cancelConvert() {
+    resetAfterExport();
+  }
+
+  function resetAfterExport() {
     setStep('idle');
-    dom.codePanel.classList.remove('visible');
+    state.currentTask = null;
+    hideExportButtons();
+    // Disable diff/code tabs
+    dom.mainTabBar.querySelectorAll('.main-tab').forEach(function (b) {
+      if (b.dataset.view === 'diff' || b.dataset.view === 'code') b.disabled = true;
+    });
+    switchTab('chat');
   }
 
   // ============================================================
-  // Modal
+  // Modal (dirty data)
   // ============================================================
   function showModal(issues) {
     var html = '';
     issues.forEach(function (issue) {
       html += '<div class="issue-item">';
-      html += '<div class="issue-row"><strong>行 ' + issue.row + '</strong> · 列: ' + esc(String(issue.column)) + '</div>';
-      html += '<div class="issue-value">当前值: <code>' + esc(String(issue.value)) + '</code></div>';
+      html += '<div class="issue-row"><strong>行 ' + issue.row + '</strong> · ' + esc(String(issue.column)) + '</div>';
+      html += '<div class="issue-value">值: <code>' + esc(String(issue.value).substring(0, 60)) + '</code></div>';
       html += '<div class="issue-error">' + esc(String(issue.error)) + '</div>';
-      html += '<div class="issue-suggestion">💡 建议: ' + esc(String(issue.suggested_action || '')) + '</div>';
+      html += '<div class="issue-suggestion">' + esc(String(issue.suggested_action || '')) + '</div>';
       html += '</div>';
     });
     dom.modalBody.innerHTML = html;
     dom.confirmModal.style.display = '';
   }
 
-  function hideModal() {
-    dom.confirmModal.style.display = 'none';
-  }
+  function hideModal() { dom.confirmModal.style.display = 'none'; }
 
   // ============================================================
   // Event Bindings
@@ -335,18 +347,27 @@
     // Theme toggle
     dom.themeToggle.addEventListener('click', function () {
       var html = document.documentElement;
-      var cur = html.getAttribute('data-theme');
-      html.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+      html.setAttribute('data-theme', html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
     });
 
-    // Code panel toggle
-    dom.codePanelHeader.addEventListener('click', toggleCodePanel);
+    // Main tab navigation
+    dom.mainTabBar.querySelectorAll('.main-tab').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (btn.disabled) return;
+        switchTab(btn.dataset.view);
+      });
+    });
+
+    // Save skill checkbox → show name input
+    dom.saveSkillCheck.addEventListener('change', function () {
+      dom.saveSkillName.style.display = dom.saveSkillCheck.checked ? '' : 'none';
+    });
 
     // Sidebar tabs
-    document.querySelectorAll('.tab-btn').forEach(function (btn) {
+    document.querySelectorAll('.sidebar .tab-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
-        document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
+        document.querySelectorAll('.sidebar .tab-btn').forEach(function (b) { b.classList.remove('active'); });
+        document.querySelectorAll('.sidebar .tab-panel').forEach(function (p) { p.classList.remove('active'); });
         btn.classList.add('active');
         var panel = document.getElementById('panel-' + btn.getAttribute('data-tab'));
         if (panel) panel.classList.add('active');
@@ -361,12 +382,11 @@
     dom.uploadArea.addEventListener('dragover', function (e) { e.preventDefault(); dom.uploadArea.classList.add('drag-over'); });
     dom.uploadArea.addEventListener('dragleave', function () { dom.uploadArea.classList.remove('drag-over'); });
     dom.uploadArea.addEventListener('drop', function (e) {
-      e.preventDefault();
-      dom.uploadArea.classList.remove('drag-over');
+      e.preventDefault(); dom.uploadArea.classList.remove('drag-over');
       if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
     });
 
-    // Target format
+    // Target
     dom.targetFmt.addEventListener('change', function () {
       state.targetFormat = dom.targetFmt.value;
       dom.targetEnc.style.display = state.targetFormat === 'csv' ? '' : 'none';
@@ -374,33 +394,28 @@
     });
     dom.targetEnc.addEventListener('change', function () { state.targetEncoding = dom.targetEnc.value; });
 
-    // Chat send
+    // Chat
     dom.btnSend.addEventListener('click', doConvert);
     dom.chatInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') doConvert(); });
     dom.btnConvert.addEventListener('click', doConvert);
 
-    // Diff
+    // Export
     dom.btnExport.addEventListener('click', doExport);
-    dom.btnCancel.addEventListener('click', cancelDiff);
+    dom.btnCancel.addEventListener('click', cancelConvert);
 
     // Modal
     $('btnAccept').addEventListener('click', hideModal);
     $('btnSkip').addEventListener('click', hideModal);
-    $('btnAbort').addEventListener('click', function () { hideModal(); setStep('idle'); });
+    $('btnAbort').addEventListener('click', function () { hideModal(); resetAfterExport(); });
   }
 
-  // ============================================================
-  // Init
-  // ============================================================
   function init() {
     cacheDom();
     bindEvents();
-    console.log('MorphSheet initialized');
+    console.log('MorphSheet ready');
   }
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  } else { init(); }
 })();

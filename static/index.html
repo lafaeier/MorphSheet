@@ -38,37 +38,50 @@
         <button class="btn-primary" id="btnConvert" disabled>开始转换</button>
       </div>
 
-      <div id="chatView" class="chat-container">
-        <div class="chat-messages" id="chatMessages">
-          <div class="message system"><div class="message-content">欢迎使用 MorphSheet<br>请上传文件，然后输入清洗指令。</div></div>
-        </div>
-        <div class="chat-input">
-          <input type="text" id="chatInput" placeholder="输入指令，如：删除金额小于0的行..." disabled>
-          <button id="btnSend" disabled>发送</button>
-        </div>
+      <!-- Tab 标签栏 (VS Code 风格) -->
+      <div class="main-tab-bar" id="mainTabBar">
+        <button class="main-tab active" data-view="chat">💬 对话</button>
+        <button class="main-tab" data-view="diff" disabled>📊 Diff 对比</button>
+        <button class="main-tab" data-view="code" disabled>📝 AI 代码</button>
+        <div class="tab-spacer"></div>
+        <label class="save-skill-label" id="saveSkillLabel" style="display:none">
+          <input type="checkbox" id="saveSkillCheck"> 保存为技能
+          <input type="text" id="saveSkillName" placeholder="技能名称" style="display:none;width:120px;margin-left:6px;">
+        </label>
+        <button class="btn-primary btn-sm" id="btnExport" style="display:none">确认导出</button>
+        <button class="btn-secondary btn-sm" id="btnCancel" style="display:none">返回修改</button>
       </div>
 
-      <div id="diffView" class="diff-container hidden">
-        <div class="diff-header">
-          <span id="diffSummary">数据对比预览</span>
-          <div class="diff-actions">
-            <button class="btn-primary" id="btnExport">确认导出</button>
-            <button class="btn-secondary" id="btnCancel">返回修改</button>
+      <!-- Tab 内容区 -->
+      <div class="main-tab-content" id="mainTabContent">
+        <!-- 对话 Tab -->
+        <div class="tab-view active" id="view-chat">
+          <div class="chat-container">
+            <div class="chat-messages" id="chatMessages">
+              <div class="message system"><div class="message-content">欢迎使用 MorphSheet<br>请上传文件，然后输入清洗指令。</div></div>
+            </div>
+            <div class="chat-input">
+              <input type="text" id="chatInput" placeholder="输入指令，如：1.将日期统一为YYYYMMDD 2.清除电话分隔符..." disabled>
+              <button id="btnSend" disabled>发送</button>
+            </div>
           </div>
         </div>
-        <div class="diff-panels">
-          <div class="diff-panel left"><h3>源数据</h3><div class="diff-table-wrapper" id="sourceTable"></div></div>
-          <div class="diff-panel right"><h3>转换后</h3><div class="diff-table-wrapper" id="targetTable"></div></div>
-        </div>
-      </div>
 
-      <!-- AI 生成的代码面板 -->
-      <div class="code-panel" id="codePanel">
-        <div class="code-panel-header" id="codePanelHeader">
-          <span>📝 AI 生成的 Pandas 代码</span>
-          <span id="codePanelToggle">展开</span>
+        <!-- Diff Tab -->
+        <div class="tab-view" id="view-diff">
+          <div class="diff-header">
+            <span id="diffSummary">数据对比预览</span>
+          </div>
+          <div class="diff-panels">
+            <div class="diff-panel left"><h3>源数据</h3><div class="diff-table-wrapper" id="sourceTable"></div></div>
+            <div class="diff-panel right"><h3>转换后</h3><div class="diff-table-wrapper" id="targetTable"></div></div>
+          </div>
         </div>
-        <div class="code-panel-body" id="codePanelBody" style="display:none"></div>
+
+        <!-- AI Code Tab -->
+        <div class="tab-view" id="view-code">
+          <div class="code-panel-body-full" id="codePanelBody"></div>
+        </div>
       </div>
     </main>
 
@@ -88,7 +101,7 @@
     <!-- 异常确认弹窗 -->
     <div class="modal-overlay" id="confirmModal" style="display:none">
       <div class="modal-box">
-        <div class="modal-header"><h3>异常数据</h3></div>
+        <div class="modal-header"><h3>⚠ 发现异常数据</h3></div>
         <div class="modal-body" id="modalBody"></div>
         <div class="modal-footer">
           <button class="btn-primary" id="btnAccept">采纳建议</button>
@@ -98,7 +111,6 @@
       </div>
     </div>
 
-    <!-- Toast -->
     <div class="toast-container" id="toastContainer"></div>
   </div>
 

@@ -564,6 +564,81 @@ td.cell-modified { background: var(--diff-modified); }
   background: var(--text-secondary);
 }
 
+/* ---- Main Tab Bar (VS Code style) ---- */
+.main-tab-bar {
+  display: flex;
+  align-items: center;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  padding: 0 4px;
+  min-height: 35px;
+  gap: 2px;
+  overflow-x: auto;
+}
+
+.main-tab {
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: var(--transition);
+  white-space: nowrap;
+  border-radius: 4px 4px 0 0;
+}
+
+.main-tab:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); }
+.main-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.main-tab:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.tab-spacer { flex: 1; }
+
+.save-skill-label {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+  gap: 4px;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+
+.save-skill-label input[type="text"] {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.btn-sm {
+  padding: 4px 12px;
+  font-size: 12px;
+  margin-right: 4px;
+}
+
+/* ---- Main Tab Content ---- */
+.main-tab-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.tab-view {
+  display: none;
+  position: absolute;
+  inset: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tab-view.active {
+  display: flex;
+}
+
 /* ---- AI Code Panel ---- */
 .code-panel {
   border-top: 1px solid var(--border);
@@ -609,6 +684,23 @@ td.cell-modified { background: var(--diff-modified); }
 .code-panel-body .keyword { color: #ff7b72; }
 .code-panel-body .string { color: #a5d6ff; }
 .code-panel-body .number { color: #79c0ff; }
+
+/* ---- Full-size code view (tab) ---- */
+.code-panel-body-full {
+  padding: 14px 18px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px; line-height: 1.6;
+  white-space: pre-wrap;
+  color: var(--text-primary);
+  background: #0d1117;
+  overflow: auto;
+  flex: 1;
+}
+.code-panel-body-full .comment { color: #8b949e; }
+.code-panel-body-full .keyword { color: #ff7b72; }
+.code-panel-body-full .string { color: #a5d6ff; }
+.code-panel-body-full .number { color: #79c0ff; }
+.code-panel-body-full .func { color: #d2a8ff; }
 .code-panel-body .func { color: #d2a8ff; }
 
 /* ---- Toast ---- */
