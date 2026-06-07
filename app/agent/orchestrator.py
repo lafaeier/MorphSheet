@@ -212,7 +212,7 @@ class Orchestrator:
 
 def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
                          max_issues: int = 10) -> list[dict]:
-    """扫描结果 DataFrame 中的 NaN/NaT，返回脏数据列表。"""
+    """检测脏数据：扫描结果中的 NaN/NaT，只检测值被强制转换的单元格。"""
     issues = []
     for col in result_df.columns:
         if len(issues) >= max_issues:
@@ -221,18 +221,14 @@ def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
             if len(issues) >= max_issues:
                 break
             res_val = result_df.iloc[i][col]
-            if pd.isna(res_val) or (isinstance(res_val, str) and ('NaT' in res_val or res_val == 'nan')):
-                # 尝试从源数据获取原始值（基于位置近似匹配）
-                src_val = "?"
-                if i < len(source_df):
-                    raw = source_df.iloc[i][col]
-                    src_val = str(raw) if not pd.isna(raw) else "(空)"
+            # 只检测值被变为 NaN/NaT 的情况（不包括整行删除）
+            is_bad = pd.isna(res_val) or (isinstance(res_val, str) and ('NaT' in res_val or res_val == 'nan'))
+            if is_bad:
                 issues.append({
-                    "row": i,
-                    "column": str(col),
-                    "value": src_val,
-                    "error": "第{}行 \"{}\" 原始值 \"{}\" 无法转换".format(i, str(col), src_val),
-                    "suggested_action": "跳过第{}行（原始值: {}）".format(i, src_val),
+                    "row": i, "column": str(col),
+                    "value": "NaN (值无法转换)",
+                    "error": "第{}行 \"{}\" 的值在转换后变为空".format(i, str(col)),
+                    "suggested_action": "跳过第{}行，该行数据包含不可转换的值".format(i),
                 })
     return issues
 

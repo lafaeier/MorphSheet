@@ -352,6 +352,16 @@
     }).catch(function (e) { toast('操作失败: ' + e.message, 'error'); });
   }
 
+  function doContinueChat() {
+    hideModal();
+    if (!state.currentTask) return;
+    // Retry with the same instructions but remove the bad rows first
+    addMsg('system', '💬 请在对话区输入补充指令来修正脏数据，然后点击发送。');
+    switchTab('chat');
+    dom.chatInput.focus();
+    dom.chatInput.placeholder = '输入修正指令，如：将99999999替换为空，或手动指定日期格式...';
+  }
+
   function doSkipRow() {
     hideModal();
     if (!state.currentTask) return;
@@ -366,15 +376,6 @@
         addMsg('system', '✅ 已跳过异常行，请查看结果。');
       }
     }).catch(function (e) { toast('操作失败: ' + e.message, 'error'); });
-  }
-
-  function doAbort() {
-    hideModal();
-    if (!state.currentTask) return;
-    API.confirmAction(state.currentTask.task_id, 'abort').then(function () {
-      resetAfterExport();
-      addMsg('system', '转换已取消。');
-    }).catch(function () { resetAfterExport(); });
   }
 
   // ============================================================
@@ -436,8 +437,8 @@
 
     // Modal
     $('btnAccept').addEventListener('click', doAcceptSuggestion);
+    $('btnChat').addEventListener('click', doContinueChat);
     $('btnSkip').addEventListener('click', doSkipRow);
-    $('btnAbort').addEventListener('click', doAbort);
   }
 
   function init() { cacheDom(); bindEvents(); console.log('MorphSheet ready'); }
