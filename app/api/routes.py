@@ -1,22 +1,26 @@
 import os
 import uuid
-import shutil
 from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse
 from app.api.schemas import (
     UploadResponse, TargetSpec, TargetSpecResponse,
     ConvertRequest, ConvertResponse,
     ConfirmActionRequest, ExportRequest, ExportResponse,
     HistoryResponse, SkillsResponse, MatchSkillsResponse,
 )
-from app.processing import file_reader, schema as schema_module, diff as diff_module
+from app.processing import file_reader, schema as schema_module
+from app.agent.orchestrator import orchestrator
+from app.api.ws import send_to_task
 from app.config import settings
 
 router = APIRouter()
 
-# 内存临时存储：file_id → {filename, file_path, df, target_spec, ...}
-_file_store: dict[str, dict] = {}
-# 任务存储：task_id → {file_id, status, result_df, code, ...}
-_task_store: dict[str, dict] = {}
+
+def _ws_sender_for(task_id: str):
+    """创建一个异步 WebSocket 发送函数，绑定到指定 task_id。"""
+    async def send(msg: dict):
+        await send_to_task(task_id, msg)
+    return send
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -40,12 +44,7 @@ async def upload(file: UploadFile = File(...)):
     schema_info = schema_module.extract(df)
     preview = schema_module.to_preview(df)
 
-    _file_store[file_id] = {
-        "filename": file.filename,
-        "file_path": file_path,
-        "df": df,
-        "target_spec": None,
-    }
+    orchestrator.register_file(file_id, file.filename, file_path, df)
 
     return UploadResponse(
         file_id=file_id,
@@ -57,42 +56,75 @@ async def upload(file: UploadFile = File(...)):
 
 @router.post("/set-target", response_model=TargetSpecResponse)
 async def set_target(spec: TargetSpec):
-    if spec.file_id not in _file_store:
+    if not orchestrator.get_file(spec.file_id):
         raise HTTPException(status_code=404, detail="文件不存在")
-    _file_store[spec.file_id]["target_spec"] = spec
+    orchestrator.set_target(spec.file_id, spec.model_dump())
     return TargetSpecResponse(file_id=spec.file_id, target_spec=spec)
 
 
 @router.post("/convert", response_model=ConvertResponse)
 async def convert(req: ConvertRequest):
-    # Phase 2 实现
-    return ConvertResponse(
-        status="not_implemented",
-        task_id=str(uuid.uuid4()),
-        error="Agent 核心将在 Phase 2 实现",
+    if not orchestrator.get_file(req.file_id):
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    result = orchestrator.start_convert(
+        file_id=req.file_id,
+        instructions=req.instructions,
+        websocket_send=None,  # Phase 3 前端 WebSocket 接入后替换
     )
+
+    return ConvertResponse(**result)
 
 
 @router.post("/confirm-action")
 async def confirm_action(req: ConfirmActionRequest):
-    # Phase 2 实现
-    return {"status": "not_implemented"}
+    task = orchestrator.get_task(req.task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    if req.action == "abort":
+        task["status"] = "cancelled"
+        return {"status": "cancelled"}
+
+    source_df = task["source_df"].copy()
+    if req.overrides:
+        for row_idx_str, col_updates in req.overrides.items():
+            row_idx = int(row_idx_str)
+            for col, new_val in col_updates.items():
+                source_df.at[row_idx, col] = new_val
+
+    task["source_df"] = source_df
+    result = orchestrator.start_convert(
+        file_id=task["file_id"],
+        instructions="重新执行上次转换",
+        websocket_send=None,
+    )
+    return result
 
 
 @router.post("/export", response_model=ExportResponse)
 async def export(req: ExportRequest):
-    # Phase 2 实现
-    return ExportResponse(
-        file_path="",
-        download_url="",
-        skill_saved=False,
+    result = orchestrator.confirm_export(
+        task_id=req.task_id,
+        save_as_skill=req.save_as_skill,
+        skill_name=req.skill_name,
     )
+    if result["status"] == "failed":
+        raise HTTPException(status_code=400, detail=result.get("error", "导出失败"))
+    return ExportResponse(**result)
 
 
-@router.get("/download/{file_id}")
-async def download(file_id: str):
-    # Phase 2 实现
-    raise HTTPException(status_code=404, detail="文件不存在")
+@router.get("/download/{task_id}")
+async def download(task_id: str):
+    task = orchestrator.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    # 尝试多种格式查找导出文件
+    for ext in ('xlsx', 'xls', 'csv'):
+        file_path = f"data/outputs/{task_id}_converted.{ext}"
+        if os.path.exists(file_path):
+            return FileResponse(file_path, filename=os.path.basename(file_path))
+    raise HTTPException(status_code=404, detail="导出文件不存在")
 
 
 @router.get("/history", response_model=HistoryResponse)
