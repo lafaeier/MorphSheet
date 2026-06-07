@@ -1,7 +1,8 @@
+import os
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-import os
+from fastapi.responses import FileResponse
 
 from app.api.routes import router as api_router
 
@@ -14,8 +15,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# API 路由必须在 StaticFiles 之前注册，确保 /api/* 不被静态文件覆盖
 app.include_router(api_router, prefix="/api")
 
 static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
-app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
+@app.get("/")
+async def root():
+    return FileResponse(os.path.join(static_dir, "index.html"))
