@@ -27,10 +27,10 @@ def write_with_warnings(df: pd.DataFrame, target_spec: dict) -> dict:
     fmt = target_spec["target_format"]
     df_out = df.copy()
 
-    if fmt == "xls" and len(df_out) > 65536:
-        truncated_rows = len(df_out) - 65536
-        warnings.append(f"xls 格式最多支持 65536 行，已截断最后 {truncated_rows} 行")
-        df_out = df_out.head(65536)
+    if fmt == "xls" and len(df_out) > 65535:
+        truncated_rows = len(df_out) - 65535
+        warnings.append(f"xls 格式最多支持 65535 行数据，已截断最后 {truncated_rows} 行")
+        df_out = df_out.head(65535)
 
     if fmt == "xls" and len(df_out.columns) > 256:
         truncated_cols = len(df_out.columns) - 256
