@@ -58,6 +58,7 @@ const STATUS_STEPS = [
 // Root App
 // ============================================================
 const App = {
+  setup() { return { state }; },
   template: `
     <sidebar-panel></sidebar-panel>
     <div class="workspace">
@@ -79,6 +80,7 @@ const App = {
 // Sidebar Component
 // ============================================================
 const SidebarPanel = {
+  setup() { return { state }; },
   template: `
     <aside class="sidebar">
       <div class="sidebar-header">
@@ -134,6 +136,7 @@ const SidebarPanel = {
 // Upload Bar Component
 // ============================================================
 const UploadBar = {
+  setup() { return { state }; },
   template: `
     <div class="top-bar">
       <div class="upload-area" :class="{'drag-over': state.fileHighlight}"
@@ -232,6 +235,7 @@ const UploadBar = {
 // Chat Panel Component
 // ============================================================
 const ChatPanel = {
+  setup() { return { state }; },
   template: `
     <div>
       <div class="chat-messages" ref="msgContainer">
@@ -272,6 +276,7 @@ const ChatPanel = {
 // Diff View Component
 // ============================================================
 const DiffView = {
+  setup() { return { state }; },
   template: `
     <div>
       <div class="diff-header">
@@ -392,6 +397,7 @@ const DiffView = {
 // Status Panel Component
 // ============================================================
 const StatusPanel = {
+  setup() { return { state }; },
   template: `
     <aside class="statusbar">
       <div class="status-header">
@@ -438,6 +444,7 @@ const StatusPanel = {
 // Confirm Modal Component
 // ============================================================
 const ConfirmModal = {
+  setup() { return { state }; },
   template: `
     <div v-if="state.showModal" class="modal-overlay" @click.self="/* no close */">
       <div class="modal-box">
@@ -496,6 +503,7 @@ const ConfirmModal = {
 // Toast Component
 // ============================================================
 const ToastContainer = {
+  setup() { return { state }; },
   template: `
     <div class="toast-container">
       <div v-for="(t, i) in state.toasts" :key="i" class="toast" :class="t.type">
