@@ -2,6 +2,7 @@ import uuid
 import pandas as pd
 from app.processing import schema as schema_module, diff as diff_module, file_writer
 from app.agent import code_generator
+from app.processing.schema import to_json_safe
 
 
 class Orchestrator:
@@ -97,21 +98,21 @@ class Orchestrator:
             })
 
             send({"type": "completed", "message": "转换完成，请查看 Diff 视图确认结果"})
-            return {
+            return to_json_safe({
                 "status": "awaiting_confirmation",
                 "task_id": task_id,
                 "preview": preview,
                 "diff": diff_data,
-            }
+            })
 
         # Failed
         send({"type": "error", "message": result.get("error", "未知错误")})
         self.tasks[task_id]["status"] = "failed"
-        return {
+        return to_json_safe({
             "status": "failed",
             "task_id": task_id,
             "error": result.get("error"),
-        }
+        })
 
     def confirm_export(self, task_id: str, save_as_skill: bool = False,
                        skill_name: str = None) -> dict:

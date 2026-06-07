@@ -45,10 +45,45 @@ def _looks_like_date(series: pd.Series) -> bool:
     return success / len(sample) > 0.6
 
 
+def _to_native(val):
+    """将 NumPy 类型转为 Python 原生类型。"""
+    if pd.isna(val):
+        return None
+    if isinstance(val, (np.integer,)):
+        return int(val)
+    if isinstance(val, (np.floating,)):
+        return float(val)
+    if isinstance(val, np.bool_):
+        return bool(val)
+    if isinstance(val, np.ndarray):
+        return val.tolist()
+    return val
+
+
+def to_json_safe(obj):
+    """递归转换对象中的所有 NumPy 类型为 Python 原生类型。"""
+    if isinstance(obj, dict):
+        return {k: to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [to_json_safe(v) for v in obj]
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if pd.isna(obj):
+        return None
+    return obj
+
+
 def to_preview(df: pd.DataFrame, max_rows: int = 20) -> dict:
-    """将 DataFrame 转为前端预览格式。"""
+    """将 DataFrame 转为前端预览格式，所有值转为 Python 原生类型。"""
     preview_df = df.head(max_rows).replace({np.nan: None, pd.NaT: None})
+    rows = [[_to_native(v) for v in row] for row in preview_df.values.tolist()]
     return {
-        "columns": list(df.columns),
-        "rows": preview_df.values.tolist(),
+        "columns": [str(c) for c in df.columns],
+        "rows": rows,
     }
