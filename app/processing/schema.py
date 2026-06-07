@@ -1,5 +1,7 @@
+import re
 import pandas as pd
 import numpy as np
+from collections import Counter
 
 
 def extract(df: pd.DataFrame) -> dict:
@@ -11,7 +13,8 @@ def extract(df: pd.DataFrame) -> dict:
         "null_counts": {col: int(df[col].isna().sum()) for col in df.columns},
     }
 
-    sample_df = df.head(5).replace({np.nan: None, pd.NaT: None})
+    # 样本扩大为 10 行，展示更多格式变体
+    sample_df = df.head(10).replace({np.nan: None, pd.NaT: None})
     schema["sample"] = sample_df.to_dict(orient="records")
 
     schema["unique_counts"] = {
@@ -28,7 +31,92 @@ def extract(df: pd.DataFrame) -> dict:
         if _looks_like_date(df[col])
     ]
 
+    # 关键: 对每列做格式模式分析，帮助 LLM 理解数据多样性
+    schema["column_patterns"] = {}
+    for col in df.columns:
+        patterns = _detect_patterns(df[col])
+        if len(patterns) > 1:
+            schema["column_patterns"][col] = patterns
+
     return schema
+
+
+def _detect_patterns(series: pd.Series) -> list[dict]:
+    """检测一列中不同值的格式模式，返回模式及示例。"""
+    sample = series.dropna().head(50)
+    if len(sample) == 0:
+        return []
+
+    patterns = Counter()
+    examples = {}
+    for val in sample:
+        s = str(val)
+        pat = _classify_pattern(s)
+        patterns[pat] += 1
+        if pat not in examples:
+            examples[pat] = s
+
+    if len(patterns) <= 1:
+        return []
+
+    total = sum(patterns.values())
+    return [
+        {
+            "pattern": p,
+            "count": c,
+            "pct": round(c / total * 100, 1),
+            "example": examples.get(p, ""),
+        }
+        for p, c in patterns.most_common()
+    ]
+
+
+def _classify_pattern(s: str) -> str:
+    """将字符串值分类为格式模式。"""
+    s = s.strip()
+    if not s:
+        return "EMPTY"
+    # 日期格式
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', s):
+        return "YYYY-MM-DD"
+    if re.match(r'^\d{4}/\d{2}/\d{2}$', s):
+        return "YYYY/MM/DD"
+    if re.match(r'^\d{4}年\d{1,2}月\d{1,2}日$', s):
+        return "YYYY年M月D日"
+    if re.match(r'^\d{8}$', s):
+        if 1900 < int(s[:4]) < 2100:
+            return "YYYYMMDD(date)"
+        return "8digits"
+    if re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', s):
+        return "YYYY-MM-DD HH:MM:SS"
+    # 电话格式
+    if re.match(r'^\d{3}-\d{4}-\d{4}$', s):
+        return "XXX-XXXX-XXXX"
+    if re.match(r'^\d{11}$', s):
+        return "11digits"
+    if re.match(r'^\(\d{3}\)\d{4}\d{4}$', s):
+        return "(XXX)XXXXXXXX"
+    if re.match(r'^\d{3}\s\d{4}\s\d{4}$', s):
+        return "XXX XXXX XXXX"
+    if re.match(r'^\d{3}-\d{7,8}$', s):
+        return "XXX-XXXXXXX"
+    # 货币格式
+    if re.match(r'^¥[\d,]+$', s):
+        return "¥with,comma"
+    if re.match(r'^\d+\.\d{2}$', s):
+        return "decimal.2"
+    # 纯数字
+    if re.match(r'^\d+$', s):
+        return "integer"
+    if re.match(r'^\d+\.\d+$', s):
+        return "decimal"
+    # 邮件
+    if '@' in s and '.' in s.split('@')[-1]:
+        return "email"
+    # 混合/未知
+    if any('一' <= c <= '鿿' for c in s):
+        return "contains_chinese"
+    return "other"
 
 
 def _looks_like_date(series: pd.Series) -> bool:

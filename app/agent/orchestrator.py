@@ -74,9 +74,11 @@ class Orchestrator:
 
         send({"type": "phase", "phase": "analyzing_schema", "message": "正在分析源数据表结构..."})
         source_schema = schema_module.extract(source_df)
-        sample = source_df.head(5).to_string()
-        log.debug("Schema extracted: columns=%s rows=%d",
-                  source_schema["columns"], source_schema["row_count"])
+        # 扩大样本到 15 行，确保 LLM 看到更多数据格式变体
+        sample = source_df.head(15).to_string()
+        log.debug("Schema extracted: columns=%s rows=%d patterns=%s",
+                  source_schema["columns"], source_schema["row_count"],
+                  list(source_schema.get("column_patterns", {}).keys()))
 
         send({"type": "phase", "phase": "generating_code", "message": "正在生成 Pandas 转换代码..."})
         log.info("Calling LLM for code generation...")
@@ -92,6 +94,8 @@ class Orchestrator:
             log.info("Convert success: task=%s retries=%d rows=%d->%d",
                      task_id[:8], result["retries"],
                      len(source_df), len(result["result_df"]))
+            # 记录 LLM 生成的代码到日志，便于排查
+            log.debug("Generated code:\n%s", result.get("code", "")[:2000])
 
             send({"type": "phase", "phase": "computing_diff", "message": "正在生成 Diff 对比..."})
             diff_data = diff_module.compute(source_df, result["result_df"])

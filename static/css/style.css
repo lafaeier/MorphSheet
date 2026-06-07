@@ -568,7 +568,7 @@ td.cell-modified { background: var(--diff-modified); }
 .code-panel {
   border-top: 1px solid var(--border);
   background: var(--bg-secondary);
-  max-height: 200px;
+  max-height: 350px;
   overflow-y: auto;
   display: none;
 }
