@@ -5,50 +5,96 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MorphSheet - 跨系统表格数据转换智能体</title>
   <link rel="stylesheet" href="/static/css/style.css">
-  <style>
-    #loading-msg { display:flex; align-items:center; justify-content:center;
-      height:100vh; color:var(--text-secondary); font-size:16px; }
-    #loading-msg .spinner { width:24px; height:24px; border:3px solid var(--border);
-      border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite;
-      margin-right:12px; }
-    @keyframes spin { to { transform:rotate(360deg); } }
-  </style>
 </head>
 <body>
-  <!-- 加载中 / 失败回退 -->
-  <div id="loading-msg">
-    <div class="spinner"></div>
-    <span>正在加载 MorphSheet...</span>
+  <div id="app">
+    <!-- 左侧边栏 -->
+    <aside class="sidebar">
+      <div class="sidebar-header"><h2 class="sidebar-title" id="themeToggle">MorphSheet</h2></div>
+      <div class="sidebar-tabs">
+        <button class="tab-btn active" data-tab="history">历史记录</button>
+        <button class="tab-btn" data-tab="skills">技能库</button>
+      </div>
+      <div class="sidebar-content">
+        <div class="tab-panel active" id="panel-history"><p class="placeholder-text">暂无转换记录</p></div>
+        <div class="tab-panel" id="panel-skills"><p class="placeholder-text">暂无保存的技能</p></div>
+      </div>
+    </aside>
+
+    <!-- 中间主工作区 -->
+    <main class="workspace">
+      <div class="top-bar">
+        <div class="upload-area" id="uploadArea">
+          <div class="upload-icon" id="uploadIcon">📂</div>
+          <p id="uploadText">拖拽文件到此处，或点击选择</p>
+          <p class="upload-hint">支持 .xlsx / .xls / .csv</p>
+          <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden>
+        </div>
+        <div class="target-selector">
+          <label>目标格式：</label>
+          <select id="targetFormat"><option value="">选择...</option><option value="xlsx">.xlsx</option><option value="xls">.xls</option><option value="csv">.csv</option></select>
+          <select id="targetEncoding" style="display:none"><option value="utf-8">UTF-8</option><option value="gbk">GBK</option></select>
+        </div>
+        <button class="btn-primary" id="btnConvert" disabled>开始转换</button>
+      </div>
+
+      <div id="chatView" class="chat-container">
+        <div class="chat-messages" id="chatMessages">
+          <div class="message system"><div class="message-content">欢迎使用 MorphSheet<br>请上传文件，然后输入清洗指令。</div></div>
+        </div>
+        <div class="chat-input">
+          <input type="text" id="chatInput" placeholder="输入指令，如：删除金额小于0的行..." disabled>
+          <button id="btnSend" disabled>发送</button>
+        </div>
+      </div>
+
+      <div id="diffView" class="diff-container" style="display:none">
+        <div class="diff-header">
+          <span id="diffSummary">数据对比预览</span>
+          <div class="diff-actions">
+            <button class="btn-primary" id="btnExport">确认导出</button>
+            <button class="btn-secondary" id="btnCancel">返回修改</button>
+          </div>
+        </div>
+        <div class="diff-panels">
+          <div class="diff-panel left"><h3>源数据</h3><div class="diff-table-wrapper" id="sourceTable"></div></div>
+          <div class="diff-panel right"><h3>转换后</h3><div class="diff-table-wrapper" id="targetTable"></div></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- 右侧状态栏 -->
+    <aside class="statusbar">
+      <div class="status-header"><h3>Agent 状态</h3></div>
+      <div class="status-steps" id="statusSteps">
+        <div class="step pending" data-step="uploaded"><span class="step-icon">○</span><span class="step-label">文件已上传</span></div>
+        <div class="step pending" data-step="analyzing"><span class="step-icon">○</span><span class="step-label">分析 Schema</span></div>
+        <div class="step pending" data-step="generating"><span class="step-icon">○</span><span class="step-label">生成转换代码</span></div>
+        <div class="step pending" data-step="executing"><span class="step-icon">○</span><span class="step-label">沙箱执行中</span></div>
+        <div class="step pending" data-step="diffing"><span class="step-icon">○</span><span class="step-label">生成 Diff 对比</span></div>
+        <div class="step pending" data-step="awaiting"><span class="step-icon">○</span><span class="step-label">等待导出确认</span></div>
+      </div>
+    </aside>
+
+    <!-- 异常确认弹窗 -->
+    <div class="modal-overlay" id="confirmModal" style="display:none">
+      <div class="modal-box">
+        <div class="modal-header"><h3>异常数据</h3></div>
+        <div class="modal-body" id="modalBody"></div>
+        <div class="modal-footer">
+          <button class="btn-primary" id="btnAccept">采纳建议</button>
+          <button class="btn-secondary" id="btnSkip">跳过此行</button>
+          <button class="btn-danger" id="btnAbort">终止转换</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast-container" id="toastContainer"></div>
   </div>
 
-  <!-- Vue 渲染目标 -->
-  <div id="app" style="display:none;"></div>
-
-  <!-- Vue 3: 本地优先, CDN 兜底 -->
-  <script src="/static/vue.global.prod.js"
-          onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js'"></script>
-
-  <!-- 应用脚本 -->
   <script src="/static/js/utils.js"></script>
   <script src="/static/js/api.js"></script>
-  <script src="/static/js/ws.js"></script>
   <script src="/static/js/main.js"></script>
-
-  <!-- 初始化检查 -->
-  <script>
-    window.addEventListener('DOMContentLoaded', function() {
-      setTimeout(function() {
-        if (typeof Vue === 'undefined') {
-          document.getElementById('loading-msg').style.display = 'flex';
-          document.getElementById('loading-msg').innerHTML =
-            '<div style="text-align:center"><h2>⚠ Vue.js 加载超时</h2>' +
-            '<p>CDN 可能无法访问，请检查网络或尝试:</p>' +
-            '<p style="margin-top:8px;font-size:12px;color:var(--text-secondary)">' +
-            '1. 在浏览器中打开 http://127.0.0.1:8765 而非 PyWebView 窗口<br>' +
-            '2. 检查防火墙/代理设置</p></div>';
-        }
-      }, 10000);
-    });
-  </script>
 </body>
 </html>
