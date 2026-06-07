@@ -1,5 +1,6 @@
 import uuid
 import pandas as pd
+import numpy as np
 from app.processing import schema as schema_module, diff as diff_module, file_writer
 from app.agent import code_generator
 from app.processing.schema import to_json_safe
@@ -9,8 +10,6 @@ log = get_logger(__name__)
 
 
 class Orchestrator:
-    """Agent 主编排器：串联从上传到导出的完整流程。"""
-
     def __init__(self):
         self.tasks: dict[str, dict] = {}
         self.file_store: dict[str, dict] = {}
@@ -19,10 +18,8 @@ class Orchestrator:
         log.info("File registered: id=%s name=%s rows=%d cols=%d",
                  file_id[:8], filename, len(df), len(df.columns))
         self.file_store[file_id] = {
-            "filename": filename,
-            "file_path": file_path,
-            "df": df,
-            "target_spec": None,
+            "filename": filename, "file_path": file_path,
+            "df": df, "target_spec": None,
         }
 
     def get_file(self, file_id: str) -> dict | None:
@@ -37,10 +34,9 @@ class Orchestrator:
                       websocket_send=None) -> dict:
         file_entry = self.file_store.get(file_id)
         if not file_entry:
-            log.warning("Convert failed: file not found id=%s", file_id[:8])
             return {"status": "failed", "error": "文件不存在"}
 
-        source_df = file_entry["df"]
+        source_df = file_entry["df"].copy()
         target_spec = file_entry.get("target_spec") or {"target_format": "xlsx", "target_encoding": "utf-8"}
 
         task_id = str(uuid.uuid4())
@@ -51,17 +47,16 @@ class Orchestrator:
             "result_df": None,
             "code": None,
             "status": "in_progress",
+            "instructions": instructions,
         }
 
         log.info("Convert started: task=%s file=%s instructions=%s",
                  task_id[:8], file_id[:8], instructions[:80])
-
         return self._run_convert(task_id, instructions, source_df, target_spec, websocket_send)
 
     def _run_convert(self, task_id: str, instructions: str,
                      source_df: pd.DataFrame, target_spec: dict,
                      websocket_send) -> dict:
-
         def send(msg):
             if websocket_send:
                 import asyncio
@@ -74,7 +69,6 @@ class Orchestrator:
 
         send({"type": "phase", "phase": "analyzing_schema", "message": "正在分析源数据表结构..."})
         source_schema = schema_module.extract(source_df)
-        # 扩大样本到 15 行，确保 LLM 看到更多数据格式变体
         sample = source_df.head(15).to_string()
         log.debug("Schema extracted: columns=%s rows=%d patterns=%s",
                   source_schema["columns"], source_schema["row_count"],
@@ -83,11 +77,8 @@ class Orchestrator:
         send({"type": "phase", "phase": "generating_code", "message": "正在生成 Pandas 转换代码..."})
         log.info("Calling LLM for code generation...")
         result = code_generator.generate_and_execute(
-            source_schema=source_schema,
-            target_spec=target_spec,
-            instructions=instructions,
-            sample_data=sample,
-            source_df=source_df,
+            source_schema=source_schema, target_spec=target_spec,
+            instructions=instructions, sample_data=sample, source_df=source_df,
         )
 
         if result["success"]:
@@ -96,12 +87,11 @@ class Orchestrator:
                      len(source_df), len(result["result_df"]))
             log.debug("Generated code:\n%s", result.get("code", "")[:2000])
 
-            # 后置脏数据检测: 检查是否有原始值被强制转换为 NaN/NaT
+            # 后置脏数据检测
             dirty = _detect_coerced_data(source_df, result["result_df"])
             if dirty:
                 log.info("Dirty data detected: %d issues", len(dirty))
-                send({"type": "blocking", "message": "发现异常数据，需要您的决策",
-                      "issues": dirty})
+                send({"type": "blocking", "message": "发现异常数据，需要您的决策", "issues": dirty})
                 self.tasks[task_id].update({
                     "result_df": result["result_df"],
                     "code": result["code"],
@@ -117,6 +107,7 @@ class Orchestrator:
             send({"type": "phase", "phase": "computing_diff", "message": "正在生成 Diff 对比..."})
             diff_data = diff_module.compute(source_df, result["result_df"])
             preview = schema_module.to_preview(result["result_df"])
+            src_preview = schema_module.to_preview(source_df)
 
             self.tasks[task_id].update({
                 "result_df": result["result_df"],
@@ -129,6 +120,7 @@ class Orchestrator:
                 "status": "awaiting_confirmation",
                 "task_id": task_id,
                 "preview": preview,
+                "source_preview": src_preview,
                 "diff": diff_data,
                 "code": result.get("code", ""),
                 "explanation": result.get("explanation", ""),
@@ -139,9 +131,52 @@ class Orchestrator:
         send({"type": "error", "message": result.get("error", "未知错误")})
         self.tasks[task_id]["status"] = "failed"
         return to_json_safe({
-            "status": "failed",
+            "status": "failed", "task_id": task_id, "error": result.get("error"),
+        })
+
+    def handle_dirty_data(self, task_id: str, action: str) -> dict:
+        """处理脏数据弹窗的用户决策。"""
+        task = self.tasks.get(task_id)
+        if not task or task.get("status") != "awaiting_human_confirmation":
+            return {"status": "failed", "error": "任务状态不正确"}
+
+        if action == "abort":
+            task["status"] = "cancelled"
+            return {"status": "cancelled"}
+
+        # accept_suggestion / skip_row: 移除坏行后重新执行
+        bad_rows = set()
+        for issue in task.get("pending_issues", []):
+            bad_rows.add(issue["row"])
+
+        source_df = task["source_df"].copy()
+        result_df = task["result_df"].copy()
+
+        if bad_rows:
+            # 从结果中删除坏行（索引基于结果 DataFrame）
+            keep_mask = [i not in bad_rows for i in range(len(result_df))]
+            clean_result = result_df[keep_mask].reset_index(drop=True)
+        else:
+            clean_result = result_df
+
+        # 现在不需要脏数据检测了，直接生成 diff
+        diff_data = diff_module.compute(source_df, clean_result)
+        preview = schema_module.to_preview(clean_result)
+        src_preview = schema_module.to_preview(source_df)
+
+        task.update({
+            "result_df": clean_result,
+            "status": "awaiting_confirmation",
+        })
+
+        return to_json_safe({
+            "status": "awaiting_confirmation",
             "task_id": task_id,
-            "error": result.get("error"),
+            "preview": preview,
+            "source_preview": src_preview,
+            "diff": diff_data,
+            "code": task.get("code", ""),
+            "explanation": "已跳过 " + str(len(bad_rows)) + " 个异常行",
         })
 
     def confirm_export(self, task_id: str, save_as_skill: bool = False,
@@ -150,23 +185,25 @@ class Orchestrator:
         if not task:
             return {"status": "failed", "error": "任务不存在"}
         if task.get("status") != "awaiting_confirmation":
-            return {"status": "failed", "error": f"任务状态不正确: {task.get('status')}"}
+            return {"status": "failed", "error": "任务状态不正确: " + str(task.get("status"))}
 
         result_df = task["result_df"]
-        target_spec = task["target_spec"]
+        target_spec = dict(task["target_spec"])
         target_spec["task_id"] = task_id
 
         write_result = file_writer.write_with_warnings(result_df, target_spec)
-        log.info("Export: task=%s path=%s warnings=%d",
-                 task_id[:8], write_result["file_path"], len(write_result["warnings"]))
+        log.info("Export: task=%s path=%s", task_id[:8], write_result["file_path"])
 
         task["status"] = "completed"
         return {
             "status": "completed",
             "file_path": write_result["file_path"],
-            "download_url": f"/api/download/{task_id}",
+            "download_url": "/api/download/" + task_id,
             "warnings": write_result["warnings"],
             "skill_saved": False,
+            "source_schema": schema_module.extract(task["source_df"]),
+            "code": task.get("code", ""),
+            "target_spec": target_spec,
         }
 
     def get_task(self, task_id: str) -> dict | None:
@@ -174,10 +211,9 @@ class Orchestrator:
 
 
 def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
-                         max_issues: int = 7) -> list[dict]:
-    """检测被强制转换的脏数据：扫描结果 DataFrame 中的 NaN/NaT。"""
+                         max_issues: int = 10) -> list[dict]:
+    """扫描结果 DataFrame 中的 NaN/NaT，返回脏数据列表。"""
     issues = []
-
     for col in result_df.columns:
         if len(issues) >= max_issues:
             break
@@ -185,21 +221,19 @@ def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
             if len(issues) >= max_issues:
                 break
             res_val = result_df.iloc[i][col]
-
-            # 检测 NaN/NaT
-            is_bad = pd.isna(res_val)
-            if not is_bad and isinstance(res_val, str):
-                is_bad = ('NaT' in res_val or res_val == 'nan')
-
-            if is_bad:
+            if pd.isna(res_val) or (isinstance(res_val, str) and ('NaT' in res_val or res_val == 'nan')):
+                # 尝试从源数据获取原始值（基于位置近似匹配）
+                src_val = "?"
+                if i < len(source_df):
+                    raw = source_df.iloc[i][col]
+                    src_val = str(raw) if not pd.isna(raw) else "(空)"
                 issues.append({
                     "row": i,
                     "column": str(col),
-                    "value": "NaN (转换失败)",
-                    "error": "第 {} 行 \"{}\" 的值无法转换，结果为空".format(i, str(col)),
-                    "suggested_action": "跳过第 {} 行，或手动修正 \"{}\" 列的值".format(i, str(col)),
+                    "value": src_val,
+                    "error": "第{}行 \"{}\" 原始值 \"{}\" 无法转换".format(i, str(col), src_val),
+                    "suggested_action": "跳过第{}行（原始值: {}）".format(i, src_val),
                 })
-
     return issues
 
 

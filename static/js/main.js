@@ -1,5 +1,5 @@
 /**
- * MorphSheet - Vanilla JS Application (Tab-based UI)
+ * MorphSheet - Vanilla JS (Tab UI + Conversation Memory)
  */
 (function () {
   'use strict';
@@ -12,180 +12,182 @@
     taskPhase: 'idle',
     chatLoading: false,
     activeTab: 'chat',
+    // Conversation memory: keep all instructions for iterative refinement
+    conversationHistory: [],
   };
 
   var $ = function (id) { return document.getElementById(id); };
-
   var dom = {};
   function cacheDom() {
-    dom.uploadArea    = $('uploadArea');
-    dom.uploadIcon    = $('uploadIcon');
-    dom.uploadText    = $('uploadText');
-    dom.fileInput     = $('fileInput');
-    dom.targetFmt     = $('targetFormat');
-    dom.targetEnc     = $('targetEncoding');
-    dom.btnConvert    = $('btnConvert');
-    dom.chatMsgs      = $('chatMessages');
-    dom.chatInput     = $('chatInput');
-    dom.btnSend       = $('btnSend');
-    dom.diffSummary   = $('diffSummary');
-    dom.sourceTable   = $('sourceTable');
-    dom.targetTable   = $('targetTable');
-    dom.btnExport     = $('btnExport');
-    dom.btnCancel     = $('btnCancel');
-    dom.statusSteps   = $('statusSteps');
-    dom.confirmModal  = $('confirmModal');
-    dom.modalBody     = $('modalBody');
+    dom.uploadArea     = $('uploadArea');
+    dom.uploadIcon     = $('uploadIcon');
+    dom.uploadText     = $('uploadText');
+    dom.fileInput      = $('fileInput');
+    dom.targetFmt      = $('targetFormat');
+    dom.targetEnc      = $('targetEncoding');
+    dom.btnConvert     = $('btnConvert');
+    dom.chatMsgs       = $('chatMessages');
+    dom.chatInput      = $('chatInput');
+    dom.btnSend        = $('btnSend');
+    dom.diffSummary    = $('diffSummary');
+    dom.sourceTable    = $('sourceTable');
+    dom.targetTable    = $('targetTable');
+    dom.btnExport      = $('btnExport');
+    dom.btnCancel      = $('btnCancel');
+    dom.statusSteps    = $('statusSteps');
+    dom.confirmModal   = $('confirmModal');
+    dom.modalBody      = $('modalBody');
     dom.toastContainer = $('toastContainer');
-    dom.themeToggle   = $('themeToggle');
-    dom.codePanelBody = $('codePanelBody');
-    dom.mainTabBar    = $('mainTabBar');
+    dom.themeToggle    = $('themeToggle');
+    dom.codePanelBody  = $('codePanelBody');
+    dom.mainTabBar     = $('mainTabBar');
     dom.saveSkillLabel = $('saveSkillLabel');
     dom.saveSkillCheck = $('saveSkillCheck');
     dom.saveSkillName  = $('saveSkillName');
+    dom.filePreviewTable = $('filePreviewTable');
   }
 
   // ============================================================
   // Toast
   // ============================================================
   function toast(msg, type) {
-    type = type || 'info';
     var el = document.createElement('div');
-    el.className = 'toast ' + type;
+    el.className = 'toast ' + (type || 'info');
     el.textContent = msg;
     dom.toastContainer.appendChild(el);
     setTimeout(function () { el.remove(); }, 3000);
   }
 
   // ============================================================
-  // Tab Navigation (VS Code style)
+  // Tab Navigation
   // ============================================================
-  function switchTab(tabName) {
-    state.activeTab = tabName;
-    // Update tab buttons
-    dom.mainTabBar.querySelectorAll('.main-tab').forEach(function (btn) {
-      btn.classList.toggle('active', btn.dataset.view === tabName);
+  function switchTab(name) {
+    state.activeTab = name;
+    dom.mainTabBar.querySelectorAll('.main-tab').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.view === name);
     });
-    // Update tab views
     document.querySelectorAll('.tab-view').forEach(function (v) {
-      v.classList.toggle('active', v.id === 'view-' + tabName);
+      v.classList.toggle('active', v.id === 'view-' + name);
     });
   }
 
-  function enableTab(tabName) {
-    var btn = dom.mainTabBar.querySelector('[data-view="' + tabName + '"]');
-    if (btn) btn.disabled = false;
+  function enableTab(name) {
+    var b = dom.mainTabBar.querySelector('[data-view="' + name + '"]');
+    if (b) b.disabled = false;
   }
 
   // ============================================================
   // Chat
   // ============================================================
   function addMsg(role, text) {
-    var div = document.createElement('div');
-    div.className = 'message ' + role;
+    var d = document.createElement('div');
+    d.className = 'message ' + role;
     var inner = document.createElement('div');
     inner.className = 'message-content';
     inner.innerHTML = text.replace(/\n/g, '<br>');
-    div.appendChild(inner);
-    dom.chatMsgs.appendChild(div);
+    d.appendChild(inner);
+    dom.chatMsgs.appendChild(d);
     dom.chatMsgs.scrollTop = dom.chatMsgs.scrollHeight;
   }
 
-  function setLoading(loading) {
-    state.chatLoading = loading;
-    dom.btnSend.disabled = loading || !state.currentFile;
-    dom.chatInput.disabled = loading || !state.currentFile;
-    dom.btnConvert.disabled = loading || !state.currentFile || !state.targetFormat;
+  function setLoading(v) {
+    state.chatLoading = v;
+    dom.btnSend.disabled = v || !state.currentFile;
+    dom.chatInput.disabled = v || !state.currentFile;
+    dom.btnConvert.disabled = v || !state.currentFile || !state.targetFormat;
   }
 
   // ============================================================
   // Status Steps
   // ============================================================
-  var stepOrder = ['uploaded', 'analyzing', 'generating', 'executing', 'diffing', 'awaiting'];
+  var stepOrder = ['uploaded','analyzing','generating','executing','diffing','awaiting'];
   function setStep(phase) {
     state.taskPhase = phase;
     var found = false;
-    stepOrder.forEach(function (key) {
-      var el = dom.statusSteps.querySelector('[data-step="' + key + '"]');
+    stepOrder.forEach(function (k) {
+      var el = dom.statusSteps.querySelector('[data-step="' + k + '"]');
       if (!el) return;
       el.className = 'step pending';
-      if (key === phase) { el.className = 'step active'; found = true; }
+      if (k === phase) { el.className = 'step active'; found = true; }
       else if (!found) { el.className = 'step done'; }
     });
-    dom.statusSteps.querySelectorAll('.step-icon').forEach(function (icon) {
-      var p = icon.parentElement;
-      if (p.classList.contains('done')) icon.textContent = '●';
-      else if (p.classList.contains('active')) icon.textContent = '◉';
-      else icon.textContent = '○';
+    dom.statusSteps.querySelectorAll('.step-icon').forEach(function (i) {
+      var p = i.parentElement;
+      if (p.classList.contains('done')) i.textContent = '●';
+      else if (p.classList.contains('active')) i.textContent = '◉';
+      else i.textContent = '○';
     });
   }
 
   // ============================================================
-  // File Upload
+  // File Upload + Preview Tab
   // ============================================================
   function handleFile(file) {
     var ext = file.name.split('.').pop().toLowerCase();
-    if (['xlsx','xls','csv'].indexOf(ext) === -1) {
-      toast('不支持: .' + ext, 'error'); return;
-    }
+    if (['xlsx','xls','csv'].indexOf(ext) === -1) { toast('不支持: .' + ext, 'error'); return; }
     setStep('uploaded');
     dom.uploadText.textContent = '上传中...';
     dom.uploadIcon.textContent = '⏳';
 
     API.upload(file).then(function (data) {
       state.currentFile = data;
+      state.conversationHistory = [];
       dom.uploadText.textContent = file.name + ' (' + data.schema_info.row_count + '行)';
       dom.uploadIcon.textContent = '✅';
-      dom.chatInput.disabled = false;
-      dom.btnSend.disabled = false;
+      dom.chatInput.disabled = false; dom.btnSend.disabled = false;
       dom.btnConvert.disabled = !state.targetFormat;
       addMsg('system', '已上传: <b>' + file.name + '</b><br>列: ' + data.schema_info.columns.join(', '));
+      // File preview tab
+      loadFilePreview(data.preview);
+      enableTab('preview');
     }).catch(function (e) {
       toast('上传失败: ' + e.message, 'error');
       dom.uploadText.textContent = '拖拽文件到此处，或点击选择';
-      dom.uploadIcon.textContent = '📂';
-      setStep('idle');
+      dom.uploadIcon.textContent = '📂'; setStep('idle');
     });
   }
 
+  function loadFilePreview(preview) {
+    if (!preview || !preview.columns) return;
+    var h = '<table><thead><tr>';
+    preview.columns.forEach(function (c) { h += '<th>' + esc(String(c)) + '</th>'; });
+    h += '</tr></thead><tbody>';
+    (preview.rows || []).forEach(function (row) {
+      h += '<tr>';
+      row.forEach(function (c) { h += '<td>' + (c != null ? esc(String(c)) : '') + '</td>'; });
+      h += '</tr>';
+    });
+    h += '</tbody></table>';
+    dom.filePreviewTable.innerHTML = h;
+  }
+
   // ============================================================
-  // Convert
+  // Convert (with conversation memory)
   // ============================================================
-  function doConvert() {
-    var instructions = dom.chatInput.value.trim();
-    if (!instructions) { toast('请输入清洗指令', 'warning'); return; }
+  function doConvert(extraInstruction) {
+    var text = extraInstruction || dom.chatInput.value.trim();
+    if (!text) { toast('请输入清洗指令', 'warning'); return; }
     if (!state.currentFile) { toast('请先上传文件', 'warning'); return; }
     if (!state.targetFormat) { toast('请选择目标格式', 'warning'); return; }
 
-    addMsg('user', instructions);
-    dom.chatInput.value = '';
+    // Build conversation context
+    if (!extraInstruction) {
+      state.conversationHistory.push(text);
+    }
+    var fullInstructions = state.conversationHistory.join('; ');
+
+    addMsg('user', text);
+    if (!extraInstruction) dom.chatInput.value = '';
     setLoading(true);
     setStep('analyzing');
+    hideExportButtons();
 
     API.setTarget(state.currentFile.file_id, state.targetFormat, state.targetEncoding).then(function () {
       setStep('generating');
-      return API.convert(state.currentFile.file_id, instructions);
+      return API.convert(state.currentFile.file_id, fullInstructions);
     }).then(function (result) {
       setLoading(false);
-      if (result.status === 'awaiting_confirmation') {
-        state.currentTask = result;
-        setStep('awaiting');
-        loadDiff(result);
-        loadCode(result);
-        enableTab('diff');
-        enableTab('code');
-        showExportButtons();
-        addMsg('system', '✅ 转换完成！点击上方 <b>Diff 对比</b> / <b>AI 代码</b> 标签查看详情。');
-      } else if (result.status === 'awaiting_human_confirmation') {
-        state.currentTask = result;
-        setStep('awaiting');
-        showModal(result.detected_issues || []);
-        addMsg('system', '⚠ 发现异常数据，请在弹窗中处理。');
-      } else if (result.status === 'failed') {
-        setStep('idle');
-        addMsg('system', '❌ 转换失败: ' + (result.error || '未知错误'));
-        toast('转换失败', 'error');
-      }
+      handleConvertResult(result);
     }).catch(function (e) {
       setLoading(false); setStep('idle');
       addMsg('system', '❌ 转换失败: ' + e.message);
@@ -193,22 +195,40 @@
     });
   }
 
-  // ============================================================
-  // Show/Hide Export Controls
-  // ============================================================
-  function showExportButtons() {
-    dom.btnExport.style.display = '';
-    dom.btnCancel.style.display = '';
-    dom.saveSkillLabel.style.display = '';
+  function handleConvertResult(result) {
+    if (result.status === 'awaiting_confirmation') {
+      state.currentTask = result;
+      setStep('awaiting');
+      loadDiff(result);
+      loadCode(result);
+      enableTab('diff'); enableTab('code');
+      showExportButtons();
+      switchTab('diff');
+      addMsg('system', '✅ 转换完成！点击标签页查看详情。如不满意可在对话区继续输入指令调整。');
+    } else if (result.status === 'awaiting_human_confirmation') {
+      state.currentTask = result;
+      setStep('awaiting');
+      showModal(result.detected_issues || []);
+      addMsg('system', '⚠ 发现 <b>' + (result.detected_issues || []).length + '</b> 个异常数据，请处理。');
+    } else if (result.status === 'failed') {
+      setStep('idle');
+      addMsg('system', '❌ 转换失败: ' + (result.error || '未知错误'));
+      toast('转换失败', 'error');
+    }
   }
 
+  // ============================================================
+  // Export Controls
+  // ============================================================
+  function showExportButtons() {
+    dom.btnExport.style.display = ''; dom.btnCancel.style.display = '';
+    dom.saveSkillLabel.style.display = '';
+  }
   function hideExportButtons() {
-    dom.btnExport.style.display = 'none';
-    dom.btnCancel.style.display = 'none';
+    dom.btnExport.style.display = 'none'; dom.btnCancel.style.display = 'none';
     dom.saveSkillLabel.style.display = 'none';
     dom.saveSkillCheck.checked = false;
-    dom.saveSkillName.style.display = 'none';
-    dom.saveSkillName.value = '';
+    dom.saveSkillName.style.display = 'none'; dom.saveSkillName.value = '';
   }
 
   // ============================================================
@@ -217,8 +237,7 @@
   function loadDiff(task) {
     var diff = task.diff || {};
     var preview = task.preview || {};
-    var srcPreview = task.source_preview || state.currentFile.preview || {};
-
+    var src = task.source_preview || state.currentFile.preview || {};
     dom.diffSummary.textContent = '原始 ' + (diff.row_counts && diff.row_counts.original || '?') +
       ' 行 → 转换后 ' + (diff.row_counts && diff.row_counts.transformed || '?') + ' 行';
 
@@ -228,38 +247,25 @@
     var removedSet = {};
     (diff.removed_rows || []).forEach(function (r) { removedSet[r] = true; });
 
-    var srcCols = (srcPreview.columns || []).map(ec);
-    var tgtCols = (preview.columns || []).map(ec);
-    var srcRows = srcPreview.rows || [];
-    var tgtRows = preview.rows || [];
+    function makeTable(cols, rows, useRemoved) {
+      var h = '<table><thead><tr>';
+      cols.forEach(function (c) { h += '<th>' + ec(String(c)) + '</th>'; });
+      h += '</tr></thead><tbody>';
+      rows.forEach(function (row, ri) {
+        h += '<tr' + (useRemoved && removedSet[ri] ? ' class="row-removed"' : '') + '>';
+        row.forEach(function (c) { h += '<td>' + ecv(c) + '</td>'; });
+        h += '</tr>';
+      });
+      h += '</tbody></table>';
+      return h;
+    }
 
-    // Source table
-    var h1 = '<table><thead><tr>';
-    srcCols.forEach(function (c) { h1 += '<th>' + c + '</th>'; });
-    h1 += '</tr></thead><tbody>';
-    srcRows.forEach(function (row, ri) {
-      h1 += '<tr' + (removedSet[ri] ? ' class="row-removed"' : '') + '>';
-      row.forEach(function (cell) { h1 += '<td>' + ecv(cell) + '</td>'; });
-      h1 += '</tr>';
-    });
-    h1 += '</tbody></table>';
-    dom.sourceTable.innerHTML = h1;
-
-    // Target table
-    var h2 = '<table><thead><tr>';
-    tgtCols.forEach(function (c) { h2 += '<th>' + c + '</th>'; });
-    h2 += '</tr></thead><tbody>';
-    tgtRows.forEach(function (row) {
-      h2 += '<tr>';
-      row.forEach(function (cell) { h2 += '<td>' + ecv(cell) + '</td>'; });
-      h2 += '</tr>';
-    });
-    h2 += '</tbody></table>';
-    dom.targetTable.innerHTML = h2;
+    dom.sourceTable.innerHTML = makeTable(src.columns || [], src.rows || [], true);
+    dom.targetTable.innerHTML = makeTable(preview.columns || [], preview.rows || [], false);
   }
 
   // ============================================================
-  // AI Code View
+  // AI Code
   // ============================================================
   function loadCode(task) {
     var html = '';
@@ -282,39 +288,29 @@
     }).join('\n');
   }
 
-  function esc(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
+  function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
   // ============================================================
-  // Export with save-as-skill
+  // Export
   // ============================================================
   function doExport() {
     if (!state.currentTask) return;
-    var saveAsSkill = dom.saveSkillCheck.checked;
-    var skillName = saveAsSkill ? (dom.saveSkillName.value.trim() || '未命名技能') : null;
+    var saveSkill = dom.saveSkillCheck.checked;
+    var skillName = saveSkill ? (dom.saveSkillName.value.trim() || '未命名技能') : null;
 
-    API.exportTask(state.currentTask.task_id, saveAsSkill, skillName).then(function (result) {
-      var msg = '导出成功: ' + result.file_path;
-      if (result.skill_saved) msg += ' | 技能已保存 ✓';
-      toast(msg, 'success');
-      addMsg('system', msg);
+    API.exportTask(state.currentTask.task_id, saveSkill, skillName).then(function (r) {
+      var msg = '导出成功: ' + r.file_path;
+      if (r.skill_saved) msg += ' | 技能已保存 ✅';
+      toast(msg, 'success'); addMsg('system', msg);
       window.open(API.getDownloadUrl(state.currentTask.task_id), '_blank');
       resetAfterExport();
-    }).catch(function (e) {
-      toast('导出失败: ' + e.message, 'error');
-    });
+    }).catch(function (e) { toast('导出失败: ' + e.message, 'error'); });
   }
 
-  function cancelConvert() {
-    resetAfterExport();
-  }
+  function cancelConvert() { resetAfterExport(); }
 
   function resetAfterExport() {
-    setStep('idle');
-    state.currentTask = null;
-    hideExportButtons();
-    // Disable diff/code tabs
+    setStep('idle'); state.currentTask = null; hideExportButtons();
     dom.mainTabBar.querySelectorAll('.main-tab').forEach(function (b) {
       if (b.dataset.view === 'diff' || b.dataset.view === 'code') b.disabled = true;
     });
@@ -322,16 +318,16 @@
   }
 
   // ============================================================
-  // Modal (dirty data)
+  // Dirty Data Modal
   // ============================================================
   function showModal(issues) {
     var html = '';
-    issues.forEach(function (issue) {
+    issues.forEach(function (iss) {
       html += '<div class="issue-item">';
-      html += '<div class="issue-row"><strong>行 ' + issue.row + '</strong> · ' + esc(String(issue.column)) + '</div>';
-      html += '<div class="issue-value">值: <code>' + esc(String(issue.value).substring(0, 60)) + '</code></div>';
-      html += '<div class="issue-error">' + esc(String(issue.error)) + '</div>';
-      html += '<div class="issue-suggestion">' + esc(String(issue.suggested_action || '')) + '</div>';
+      html += '<div class="issue-row"><strong>行 ' + iss.row + '</strong> · ' + esc(String(iss.column)) + '</div>';
+      html += '<div class="issue-value">原始值: <code>' + esc(String(iss.value || '').substring(0, 60)) + '</code></div>';
+      html += '<div class="issue-error">' + esc(String(iss.error)) + '</div>';
+      html += '<div class="issue-suggestion">💡 ' + esc(String(iss.suggested_action || '')) + '</div>';
       html += '</div>';
     });
     dom.modalBody.innerHTML = html;
@@ -340,45 +336,80 @@
 
   function hideModal() { dom.confirmModal.style.display = 'none'; }
 
+  function doAcceptSuggestion() {
+    hideModal();
+    if (!state.currentTask) return;
+    addMsg('system', '🔧 采纳建议，移除异常行...');
+    API.confirmAction(state.currentTask.task_id, 'accept_suggestion').then(function (r) {
+      if (r.status === 'awaiting_confirmation') {
+        state.currentTask = r;
+        loadDiff(r); loadCode(r);
+        enableTab('diff'); enableTab('code');
+        showExportButtons();
+        switchTab('diff');
+        addMsg('system', '✅ 已移除异常行，请查看结果。');
+      }
+    }).catch(function (e) { toast('操作失败: ' + e.message, 'error'); });
+  }
+
+  function doSkipRow() {
+    hideModal();
+    if (!state.currentTask) return;
+    addMsg('system', '⏭ 跳过异常行...');
+    API.confirmAction(state.currentTask.task_id, 'skip_row').then(function (r) {
+      if (r.status === 'awaiting_confirmation') {
+        state.currentTask = r;
+        loadDiff(r); loadCode(r);
+        enableTab('diff'); enableTab('code');
+        showExportButtons();
+        switchTab('diff');
+        addMsg('system', '✅ 已跳过异常行，请查看结果。');
+      }
+    }).catch(function (e) { toast('操作失败: ' + e.message, 'error'); });
+  }
+
+  function doAbort() {
+    hideModal();
+    if (!state.currentTask) return;
+    API.confirmAction(state.currentTask.task_id, 'abort').then(function () {
+      resetAfterExport();
+      addMsg('system', '转换已取消。');
+    }).catch(function () { resetAfterExport(); });
+  }
+
   // ============================================================
   // Event Bindings
   // ============================================================
   function bindEvents() {
-    // Theme toggle
     dom.themeToggle.addEventListener('click', function () {
-      var html = document.documentElement;
-      html.setAttribute('data-theme', html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+      var h = document.documentElement;
+      h.setAttribute('data-theme', h.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
     });
 
-    // Main tab navigation
-    dom.mainTabBar.querySelectorAll('.main-tab').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        if (btn.disabled) return;
-        switchTab(btn.dataset.view);
-      });
+    // Main tabs
+    dom.mainTabBar.querySelectorAll('.main-tab').forEach(function (b) {
+      b.addEventListener('click', function () { if (!b.disabled) switchTab(b.dataset.view); });
     });
 
-    // Save skill checkbox → show name input
+    // Save skill checkbox → name input
     dom.saveSkillCheck.addEventListener('change', function () {
       dom.saveSkillName.style.display = dom.saveSkillCheck.checked ? '' : 'none';
     });
 
-    // Sidebar tabs
-    document.querySelectorAll('.sidebar .tab-btn').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        document.querySelectorAll('.sidebar .tab-btn').forEach(function (b) { b.classList.remove('active'); });
+    // Sidebar
+    document.querySelectorAll('.sidebar .tab-btn').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('.sidebar .tab-btn').forEach(function (x) { x.classList.remove('active'); });
         document.querySelectorAll('.sidebar .tab-panel').forEach(function (p) { p.classList.remove('active'); });
-        btn.classList.add('active');
-        var panel = document.getElementById('panel-' + btn.getAttribute('data-tab'));
-        if (panel) panel.classList.add('active');
+        b.classList.add('active');
+        var p = document.getElementById('panel-' + b.getAttribute('data-tab'));
+        if (p) p.classList.add('active');
       });
     });
 
     // File upload
     dom.uploadArea.addEventListener('click', function () { dom.fileInput.click(); });
-    dom.fileInput.addEventListener('change', function () {
-      if (dom.fileInput.files[0]) handleFile(dom.fileInput.files[0]);
-    });
+    dom.fileInput.addEventListener('change', function () { if (dom.fileInput.files[0]) handleFile(dom.fileInput.files[0]); });
     dom.uploadArea.addEventListener('dragover', function (e) { e.preventDefault(); dom.uploadArea.classList.add('drag-over'); });
     dom.uploadArea.addEventListener('dragleave', function () { dom.uploadArea.classList.remove('drag-over'); });
     dom.uploadArea.addEventListener('drop', function (e) {
@@ -395,27 +426,21 @@
     dom.targetEnc.addEventListener('change', function () { state.targetEncoding = dom.targetEnc.value; });
 
     // Chat
-    dom.btnSend.addEventListener('click', doConvert);
+    dom.btnSend.addEventListener('click', function () { doConvert(); });
     dom.chatInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') doConvert(); });
-    dom.btnConvert.addEventListener('click', doConvert);
+    dom.btnConvert.addEventListener('click', function () { doConvert(); });
 
     // Export
     dom.btnExport.addEventListener('click', doExport);
     dom.btnCancel.addEventListener('click', cancelConvert);
 
     // Modal
-    $('btnAccept').addEventListener('click', hideModal);
-    $('btnSkip').addEventListener('click', hideModal);
-    $('btnAbort').addEventListener('click', function () { hideModal(); resetAfterExport(); });
+    $('btnAccept').addEventListener('click', doAcceptSuggestion);
+    $('btnSkip').addEventListener('click', doSkipRow);
+    $('btnAbort').addEventListener('click', doAbort);
   }
 
-  function init() {
-    cacheDom();
-    bindEvents();
-    console.log('MorphSheet ready');
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else { init(); }
+  function init() { cacheDom(); bindEvents(); console.log('MorphSheet ready'); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();

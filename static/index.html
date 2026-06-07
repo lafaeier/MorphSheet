@@ -41,6 +41,7 @@
       <!-- Tab 标签栏 (VS Code 风格) -->
       <div class="main-tab-bar" id="mainTabBar">
         <button class="main-tab active" data-view="chat">💬 对话</button>
+        <button class="main-tab" data-view="preview" disabled>📋 源数据</button>
         <button class="main-tab" data-view="diff" disabled>📊 Diff 对比</button>
         <button class="main-tab" data-view="code" disabled>📝 AI 代码</button>
         <div class="tab-spacer"></div>
@@ -76,6 +77,11 @@
             <div class="diff-panel left"><h3>源数据</h3><div class="diff-table-wrapper" id="sourceTable"></div></div>
             <div class="diff-panel right"><h3>转换后</h3><div class="diff-table-wrapper" id="targetTable"></div></div>
           </div>
+        </div>
+
+        <!-- File Preview Tab -->
+        <div class="tab-view" id="view-preview">
+          <div class="diff-panel" style="border:none"><h3>上传文件内容预览 (前20行)</h3><div class="diff-table-wrapper" id="filePreviewTable"></div></div>
         </div>
 
         <!-- AI Code Tab -->

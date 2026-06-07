@@ -88,19 +88,8 @@ async def confirm_action(req: ConfirmActionRequest):
         task["status"] = "cancelled"
         return {"status": "cancelled"}
 
-    source_df = task["source_df"].copy()
-    if req.overrides:
-        for row_idx_str, col_updates in req.overrides.items():
-            row_idx = int(row_idx_str)
-            for col, new_val in col_updates.items():
-                source_df.at[row_idx, col] = new_val
-
-    task["source_df"] = source_df
-    result = orchestrator.start_convert(
-        file_id=task["file_id"],
-        instructions="重新执行上次转换",
-        websocket_send=None,
-    )
+    # accept_suggestion / skip_row: 移除坏行
+    result = orchestrator.handle_dirty_data(req.task_id, req.action)
     return result
 
 
