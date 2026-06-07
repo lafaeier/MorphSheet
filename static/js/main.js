@@ -288,21 +288,21 @@ const DiffView = {
       </div>
       <div class="diff-panels">
         <div class="diff-panel left">
-          <h3>源数据 ({{ diff?.row_counts?.original || 0 }} 行)</h3>
+          <h3>源数据 ({{ (diff.row_counts && diff.row_counts.original) || 0 }} 行)</h3>
           <div class="diff-table-wrapper">
             <table>
               <thead><tr><th v-for="c in sourceColumns" :key="c">{{ c }}</th></tr></thead>
               <tbody>
                 <tr v-for="(row, ri) in sourceRows" :key="ri" :class="rowClass(ri)">
                   <td v-for="(cell, ci) in row" :key="ci"
-                      :class="cellClass(ri, sourceColumns[ci])">{{ cell ?? '' }}</td>
+                      :class="cellClass(ri, sourceColumns[ci])">{{ cell || '' }}</td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
         <div class="diff-panel right">
-          <h3>转换后 ({{ diff?.row_counts?.transformed || 0 }} 行)</h3>
+          <h3>转换后 ({{ (diff.row_counts && diff.row_counts.transformed) || 0 }} 行)</h3>
           <div class="diff-table-wrapper">
             <table>
               <thead><tr><th v-for="c in targetColumns" :key="c"
@@ -310,7 +310,7 @@ const DiffView = {
               <tbody>
                 <tr v-for="(row, ri) in targetRows" :key="ri">
                   <td v-for="(cell, ci) in row" :key="ci"
-                      :class="cellClassT(ri, targetColumns[ci], cell)">{{ cell ?? '' }}</td>
+                      :class="cellClassT(ri, targetColumns[ci], cell)">{{ cell || '' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -321,7 +321,7 @@ const DiffView = {
   `,
   data() {
     return {
-      diff: null,
+      diff: { row_counts: {} },
       sourceColumns: [],
       targetColumns: [],
       sourceRows: [],
