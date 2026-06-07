@@ -630,6 +630,11 @@ td.cell-added { background:var(--diff-added); }
 // Bootstrap
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
+  if (typeof Vue === 'undefined') {
+    document.getElementById('loading-msg').style.display = 'flex';
+    return;
+  }
+
   // Inject dynamic styles
   const styleEl = document.createElement('style');
   styleEl.textContent = DYNAMIC_STYLES;
@@ -644,5 +649,30 @@ document.addEventListener('DOMContentLoaded', () => {
   app.component('StatusPanel', StatusPanel);
   app.component('ConfirmModal', ConfirmModal);
   app.component('ToastContainer', ToastContainer);
-  app.mount('#app');
+
+  // Global error handler
+  app.config.errorHandler = function(err, vm, info) {
+    console.error('Vue error:', err, info);
+    const loading = document.getElementById('loading-msg');
+    if (loading) {
+      loading.style.display = 'flex';
+      loading.innerHTML = '<div style="text-align:center"><h2>⚠ 应用初始化错误</h2>' +
+        '<p style="font-size:12px;color:var(--text-secondary);max-width:500px;margin-top:8px">' +
+        (err.message || String(err)) + '</p>' +
+        '<p style="margin-top:12px;font-size:12px">请检查浏览器控制台 (F12) 获取详细信息</p></div>';
+    }
+  };
+
+  try {
+    app.mount('#app');
+    document.getElementById('loading-msg').style.display = 'none';
+    document.getElementById('app').style.display = '';
+    console.log('MorphSheet mounted successfully');
+  } catch (e) {
+    console.error('Mount error:', e);
+    document.getElementById('loading-msg').style.display = 'flex';
+    document.getElementById('loading-msg').innerHTML =
+      '<div style="text-align:center"><h2>⚠ 启动失败</h2>' +
+      '<p style="font-size:12px;margin-top:8px">' + e.message + '</p></div>';
+  }
 });

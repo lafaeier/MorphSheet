@@ -5,16 +5,50 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MorphSheet - 跨系统表格数据转换智能体</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    #loading-msg { display:flex; align-items:center; justify-content:center;
+      height:100vh; color:var(--text-secondary); font-size:16px; }
+    #loading-msg .spinner { width:24px; height:24px; border:3px solid var(--border);
+      border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite;
+      margin-right:12px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+  </style>
 </head>
 <body>
-  <div id="app">
-    <!-- Vue 动态渲染三栏布局 -->
+  <!-- 加载中 / 失败回退 -->
+  <div id="loading-msg">
+    <div class="spinner"></div>
+    <span>正在加载 MorphSheet...</span>
   </div>
 
-  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- Vue 渲染目标 -->
+  <div id="app" style="display:none;"></div>
+
+  <!-- Vue 3: 本地优先, CDN 兜底 -->
+  <script src="/static/vue.global.prod.js"
+          onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js'"></script>
+
+  <!-- 应用脚本 -->
   <script src="/static/js/utils.js"></script>
   <script src="/static/js/api.js"></script>
   <script src="/static/js/ws.js"></script>
   <script src="/static/js/main.js"></script>
+
+  <!-- 初始化检查 -->
+  <script>
+    window.addEventListener('DOMContentLoaded', function() {
+      setTimeout(function() {
+        if (typeof Vue === 'undefined') {
+          document.getElementById('loading-msg').style.display = 'flex';
+          document.getElementById('loading-msg').innerHTML =
+            '<div style="text-align:center"><h2>⚠ Vue.js 加载超时</h2>' +
+            '<p>CDN 可能无法访问，请检查网络或尝试:</p>' +
+            '<p style="margin-top:8px;font-size:12px;color:var(--text-secondary)">' +
+            '1. 在浏览器中打开 http://127.0.0.1:8765 而非 PyWebView 窗口<br>' +
+            '2. 检查防火墙/代理设置</p></div>';
+        }
+      }, 10000);
+    });
+  </script>
 </body>
 </html>
