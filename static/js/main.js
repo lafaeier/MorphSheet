@@ -1,5 +1,5 @@
 /**
- * MorphSheet - Vanilla JS (Tab UI + Conversation Memory)
+ * MorphSheet - Vanilla JS (Tab UI + Sidebar + Lazy Diff)
  */
 (function () {
   'use strict';
@@ -12,39 +12,45 @@
     taskPhase: 'idle',
     chatLoading: false,
     activeTab: 'chat',
-    // Conversation memory: keep all instructions for iterative refinement
     conversationHistory: [],
+    // Diff lazy loading
+    allSourceRows: [],
+    allTargetRows: [],
+    diffBatchSize: 50,
+    diffLoadedCount: 0,
   };
 
   var $ = function (id) { return document.getElementById(id); };
   var dom = {};
   function cacheDom() {
-    dom.uploadArea     = $('uploadArea');
-    dom.uploadIcon     = $('uploadIcon');
-    dom.uploadText     = $('uploadText');
-    dom.fileInput      = $('fileInput');
-    dom.targetFmt      = $('targetFormat');
-    dom.targetEnc      = $('targetEncoding');
-    dom.btnConvert     = $('btnConvert');
-    dom.chatMsgs       = $('chatMessages');
-    dom.chatInput      = $('chatInput');
-    dom.btnSend        = $('btnSend');
-    dom.diffSummary    = $('diffSummary');
-    dom.sourceTable    = $('sourceTable');
-    dom.targetTable    = $('targetTable');
-    dom.btnExport      = $('btnExport');
-    dom.btnCancel      = $('btnCancel');
-    dom.statusSteps    = $('statusSteps');
-    dom.confirmModal   = $('confirmModal');
-    dom.modalBody      = $('modalBody');
-    dom.toastContainer = $('toastContainer');
-    dom.themeToggle    = $('themeToggle');
-    dom.codePanelBody  = $('codePanelBody');
-    dom.mainTabBar     = $('mainTabBar');
-    dom.saveSkillLabel = $('saveSkillLabel');
-    dom.saveSkillCheck = $('saveSkillCheck');
-    dom.saveSkillName  = $('saveSkillName');
+    dom.uploadArea      = $('uploadArea');
+    dom.uploadIcon      = $('uploadIcon');
+    dom.uploadText      = $('uploadText');
+    dom.fileInput       = $('fileInput');
+    dom.targetFmt       = $('targetFormat');
+    dom.targetEnc       = $('targetEncoding');
+    dom.btnConvert      = $('btnConvert');
+    dom.chatMsgs        = $('chatMessages');
+    dom.chatInput       = $('chatInput');
+    dom.btnSend         = $('btnSend');
+    dom.diffSummary     = $('diffSummary');
+    dom.sourceTable     = $('sourceTable');
+    dom.targetTable     = $('targetTable');
+    dom.btnExport       = $('btnExport');
+    dom.btnCancel       = $('btnCancel');
+    dom.statusSteps     = $('statusSteps');
+    dom.confirmModal    = $('confirmModal');
+    dom.modalBody       = $('modalBody');
+    dom.toastContainer  = $('toastContainer');
+    dom.themeToggle     = $('themeToggle');
+    dom.codePanelBody   = $('codePanelBody');
+    dom.mainTabBar      = $('mainTabBar');
+    dom.saveSkillLabel  = $('saveSkillLabel');
+    dom.saveSkillCheck  = $('saveSkillCheck');
+    dom.saveSkillName   = $('saveSkillName');
     dom.filePreviewTable = $('filePreviewTable');
+    dom.panelHistory    = $('panel-history');
+    dom.panelSkills     = $('panel-skills');
   }
 
   // ============================================================
@@ -59,6 +65,63 @@
   }
 
   // ============================================================
+  // Sidebar: Load Skills & History
+  // ============================================================
+  function loadSkills() {
+    API.getSkills(50).then(function (data) {
+      var skills = data.skills || [];
+      if (skills.length === 0) {
+        dom.panelSkills.innerHTML = '<p class="placeholder-text">暂无保存的技能</p>';
+        return;
+      }
+      var html = '';
+      skills.forEach(function (s) {
+        html += '<div class="skill-card" data-skill-id="' + s.skill_id + '" title="点击应用此技能">';
+        html += '<div class="skill-name">' + esc(s.name) + '</div>';
+        html += '<div class="skill-desc">' + esc(s.source_schema_summary || '') + '</div>';
+        html += '<div class="skill-meta">使用 ' + s.usage_count + ' 次 · ' + esc(s.target_format || '') + '</div>';
+        html += '</div>';
+      });
+      dom.panelSkills.innerHTML = html;
+      // Click to apply skill
+      dom.panelSkills.querySelectorAll('.skill-card').forEach(function (card) {
+        card.addEventListener('click', function () {
+          var sid = card.dataset.skillId;
+          var name = card.querySelector('.skill-name').textContent;
+          if (!state.currentFile) { toast('请先上传文件', 'warning'); return; }
+          addMsg('system', '🔄 应用技能: ' + name);
+          doConvertWithSkill(sid);
+        });
+      });
+    }).catch(function () {});
+  }
+
+  function loadHistory() {
+    API.getHistory(50).then(function (data) {
+      var tasks = data.tasks || [];
+      if (tasks.length === 0) {
+        dom.panelHistory.innerHTML = '<p class="placeholder-text">暂无转换记录</p>';
+        return;
+      }
+      var html = '';
+      tasks.forEach(function (t) {
+        var cls = 'history-status ' + (t.status || '');
+        html += '<div class="history-item">';
+        html += '<div class="history-name">' + esc(t.source_filename || '') + '</div>';
+        html += '<div class="history-meta">' + esc(t.created_at || '').substring(0, 16) + '</div>';
+        html += '<span class="' + cls + '">' + statusLabel(t.status) + '</span>';
+        html += '</div>';
+      });
+      dom.panelHistory.innerHTML = html;
+    }).catch(function () {});
+  }
+
+  function statusLabel(s) {
+    var map = { completed: '已完成', failed: '失败', cancelled: '已取消', in_progress: '进行中' };
+    return map[s] || s || '';
+  }
+
+  // ============================================================
   // Tab Navigation
   // ============================================================
   function switchTab(name) {
@@ -69,6 +132,10 @@
     document.querySelectorAll('.tab-view').forEach(function (v) {
       v.classList.toggle('active', v.id === 'view-' + name);
     });
+    // Lazy-load more diff rows when switching to diff tab
+    if (name === 'diff' && state.currentTask) {
+      ensureDiffScroll();
+    }
   }
 
   function enableTab(name) {
@@ -137,9 +204,10 @@
       dom.chatInput.disabled = false; dom.btnSend.disabled = false;
       dom.btnConvert.disabled = !state.targetFormat;
       addMsg('system', '已上传: <b>' + file.name + '</b><br>列: ' + data.schema_info.columns.join(', '));
-      // File preview tab
       loadFilePreview(data.preview);
       enableTab('preview');
+      // Refresh skills (might have matched ones)
+      loadSkills();
     }).catch(function (e) {
       toast('上传失败: ' + e.message, 'error');
       dom.uploadText.textContent = '拖拽文件到此处，或点击选择';
@@ -162,7 +230,7 @@
   }
 
   // ============================================================
-  // Convert (with conversation memory)
+  // Convert
   // ============================================================
   function doConvert(extraInstruction) {
     var text = extraInstruction || dom.chatInput.value.trim();
@@ -170,17 +238,12 @@
     if (!state.currentFile) { toast('请先上传文件', 'warning'); return; }
     if (!state.targetFormat) { toast('请选择目标格式', 'warning'); return; }
 
-    // Build conversation context
-    if (!extraInstruction) {
-      state.conversationHistory.push(text);
-    }
+    if (!extraInstruction) state.conversationHistory.push(text);
     var fullInstructions = state.conversationHistory.join('; ');
 
     addMsg('user', text);
     if (!extraInstruction) dom.chatInput.value = '';
-    setLoading(true);
-    setStep('analyzing');
-    hideExportButtons();
+    setLoading(true); setStep('analyzing'); hideExportButtons();
 
     API.setTarget(state.currentFile.file_id, state.targetFormat, state.targetEncoding).then(function () {
       setStep('generating');
@@ -192,6 +255,21 @@
       setLoading(false); setStep('idle');
       addMsg('system', '❌ 转换失败: ' + e.message);
       toast('转换失败: ' + e.message, 'error');
+    });
+  }
+
+  function doConvertWithSkill(skillId) {
+    if (!state.currentFile || !state.targetFormat) return;
+    setLoading(true); setStep('analyzing'); hideExportButtons();
+    API.setTarget(state.currentFile.file_id, state.targetFormat, state.targetEncoding).then(function () {
+      setStep('generating');
+      return API.convert(state.currentFile.file_id, '', skillId);
+    }).then(function (result) {
+      setLoading(false);
+      handleConvertResult(result);
+    }).catch(function (e) {
+      setLoading(false); setStep('idle');
+      toast('技能应用失败: ' + e.message, 'error');
     });
   }
 
@@ -232,36 +310,123 @@
   }
 
   // ============================================================
-  // Diff View
+  // Diff View (with lazy loading on scroll)
   // ============================================================
   function loadDiff(task) {
     var diff = task.diff || {};
     var preview = task.preview || {};
     var src = task.source_preview || state.currentFile.preview || {};
-    dom.diffSummary.textContent = '原始 ' + (diff.row_counts && diff.row_counts.original || '?') +
-      ' 行 → 转换后 ' + (diff.row_counts && diff.row_counts.transformed || '?') + ' 行';
 
-    function ec(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-    function ecv(v) { return v == null ? '' : String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    state.allSourceRows = src.rows || [];
+    state.allTargetRows = preview.rows || [];
+    state.diffLoadedCount = 0;
+    state.sourceCols = (src.columns || []).map(function (c) { return esc(String(c)); });
+    state.targetCols = (preview.columns || []).map(function (c) { return esc(String(c)); });
+    state.removedSet = {};
+    (diff.removed_rows || []).forEach(function (r) { state.removedSet[r] = true; });
 
-    var removedSet = {};
-    (diff.removed_rows || []).forEach(function (r) { removedSet[r] = true; });
+    dom.diffSummary.textContent = '原始 ' + (diff.row_counts && diff.row_counts.original || state.allSourceRows.length) +
+      ' 行 → 转换后 ' + (diff.row_counts && diff.row_counts.transformed || state.allTargetRows.length) + ' 行';
 
-    function makeTable(cols, rows, useRemoved) {
-      var h = '<table><thead><tr>';
-      cols.forEach(function (c) { h += '<th>' + ec(String(c)) + '</th>'; });
-      h += '</tr></thead><tbody>';
-      rows.forEach(function (row, ri) {
-        h += '<tr' + (useRemoved && removedSet[ri] ? ' class="row-removed"' : '') + '>';
-        row.forEach(function (c) { h += '<td>' + ecv(c) + '</td>'; });
-        h += '</tr>';
-      });
-      h += '</tbody></table>';
-      return h;
+    // Init tables with headers
+    initDiffTables(state.sourceCols, state.targetCols);
+
+    // Load first batch
+    appendDiffBatch();
+
+    // Scroll handler for lazy loading
+    function onScroll() {
+      var st = dom.sourceTable;
+      if (st.scrollTop + st.clientHeight >= st.scrollHeight - 50) {
+        appendDiffBatch();
+      }
     }
+    dom.sourceTable.removeEventListener('scroll', onScroll);
+    dom.sourceTable.addEventListener('scroll', onScroll);
+    dom.targetTable.removeEventListener('scroll', onSync);
+    dom.targetTable.addEventListener('scroll', onSync);
 
-    dom.sourceTable.innerHTML = makeTable(src.columns || [], src.rows || [], true);
-    dom.targetTable.innerHTML = makeTable(preview.columns || [], preview.rows || [], false);
+    function onSync() {
+      // Sync scroll between source and target
+      dom.sourceTable.scrollTop = dom.targetTable.scrollTop;
+    }
+  }
+
+  function appendDiffBatch() {
+    var start = state.diffLoadedCount;
+    var end = Math.min(start + state.diffBatchSize, Math.max(state.allSourceRows.length, state.allTargetRows.length));
+    if (start >= end) return;
+
+    var maxRows = Math.max(state.allSourceRows.length, state.allTargetRows.length);
+    var batchEnd = Math.min(start + state.diffBatchSize, maxRows);
+
+    // Build source table batch
+    var shtml = '';
+    for (var i = start; i < batchEnd; i++) {
+      var removed = state.removedSet[i];
+      shtml += '<tr' + (removed ? ' class="row-removed"' : '') + '>';
+      var srow = state.allSourceRows[i] || [];
+      state.sourceCols.forEach(function (c, ci) {
+        var v = srow[ci];
+        shtml += '<td>' + (v != null ? esc(String(v)) : '') + '</td>';
+      });
+      shtml += '</tr>';
+    }
+    // Append to source table (keep thead)
+    var st = dom.sourceTable.querySelector('tbody') || (function () {
+      var tbody = document.createElement('tbody');
+      dom.sourceTable.querySelector('table').appendChild(tbody);
+      return tbody;
+    })();
+    st.insertAdjacentHTML('beforeend', shtml);
+
+    // Build target table batch
+    var thtml = '';
+    for (var j = start; j < batchEnd; j++) {
+      thtml += '<tr>';
+      var trow = state.allTargetRows[j] || [];
+      state.targetCols.forEach(function (c, ci) {
+        var v = trow[ci];
+        thtml += '<td>' + (v != null ? esc(String(v)) : '') + '</td>';
+      });
+      thtml += '</tr>';
+    }
+    var tt = dom.targetTable.querySelector('tbody') || (function () {
+      var tbody = document.createElement('tbody');
+      dom.targetTable.querySelector('table').appendChild(tbody);
+      return tbody;
+    })();
+    tt.insertAdjacentHTML('beforeend', thtml);
+
+    state.diffLoadedCount = batchEnd;
+
+    // Show load status
+    if (state.diffLoadedCount < maxRows) {
+      var remaining = maxRows - state.diffLoadedCount;
+      // Add a "loading more" indicator row
+      var loadRow = '<tr><td colspan="99" style="text-align:center;color:var(--text-secondary);padding:8px;">↓ 向下滚动加载更多 (剩余 ' + remaining + ' 行)</td></tr>';
+      st.insertAdjacentHTML('beforeend', loadRow);
+      tt.insertAdjacentHTML('beforeend', loadRow);
+    }
+  }
+
+  function ensureDiffScroll() {
+    if (state.diffLoadedCount < Math.max(state.allSourceRows.length, state.allTargetRows.length)) {
+      // Force load more if diff tab is active
+    }
+  }
+
+  // Initialize source table with header
+  function initDiffTables(srcCols, tgtCols) {
+    var sh = '<table><thead><tr>';
+    srcCols.forEach(function (c) { sh += '<th>' + c + '</th>'; });
+    sh += '</tr></thead><tbody></tbody></table>';
+    dom.sourceTable.innerHTML = sh;
+
+    var th = '<table><thead><tr>';
+    tgtCols.forEach(function (c) { th += '<th>' + c + '</th>'; });
+    th += '</tr></thead><tbody></tbody></table>';
+    dom.targetTable.innerHTML = th;
   }
 
   // ============================================================
@@ -300,9 +465,10 @@
 
     API.exportTask(state.currentTask.task_id, saveSkill, skillName).then(function (r) {
       var msg = '导出成功: ' + r.file_path;
-      if (r.skill_saved) msg += ' | 技能已保存 ✅';
+      if (r.skill_saved) { msg += ' | 技能已保存 ✅'; loadSkills(); }
       toast(msg, 'success'); addMsg('system', msg);
       window.open(API.getDownloadUrl(state.currentTask.task_id), '_blank');
+      loadHistory();
       resetAfterExport();
     }).catch(function (e) { toast('导出失败: ' + e.message, 'error'); });
   }
@@ -311,6 +477,7 @@
 
   function resetAfterExport() {
     setStep('idle'); state.currentTask = null; hideExportButtons();
+    state.allSourceRows = []; state.allTargetRows = []; state.diffLoadedCount = 0;
     dom.mainTabBar.querySelectorAll('.main-tab').forEach(function (b) {
       if (b.dataset.view === 'diff' || b.dataset.view === 'code') b.disabled = true;
     });
@@ -325,7 +492,7 @@
     issues.forEach(function (iss) {
       html += '<div class="issue-item">';
       html += '<div class="issue-row"><strong>行 ' + iss.row + '</strong> · ' + esc(String(iss.column)) + '</div>';
-      html += '<div class="issue-value">原始值: <code>' + esc(String(iss.value || '').substring(0, 60)) + '</code></div>';
+      html += '<div class="issue-value">值: <code>' + esc(String(iss.value || '').substring(0, 60)) + '</code></div>';
       html += '<div class="issue-error">' + esc(String(iss.error)) + '</div>';
       html += '<div class="issue-suggestion">💡 ' + esc(String(iss.suggested_action || '')) + '</div>';
       html += '</div>';
@@ -345,21 +512,18 @@
         state.currentTask = r;
         loadDiff(r); loadCode(r);
         enableTab('diff'); enableTab('code');
-        showExportButtons();
-        switchTab('diff');
-        addMsg('system', '✅ 已移除异常行，请查看结果。');
+        showExportButtons(); switchTab('diff');
+        addMsg('system', '✅ 已移除异常行。');
       }
     }).catch(function (e) { toast('操作失败: ' + e.message, 'error'); });
   }
 
   function doContinueChat() {
     hideModal();
-    if (!state.currentTask) return;
-    // Retry with the same instructions but remove the bad rows first
     addMsg('system', '💬 请在对话区输入补充指令来修正脏数据，然后点击发送。');
     switchTab('chat');
     dom.chatInput.focus();
-    dom.chatInput.placeholder = '输入修正指令，如：将99999999替换为空，或手动指定日期格式...';
+    dom.chatInput.placeholder = '输入修正指令，如：将99999999替换为空...';
   }
 
   function doSkipRow() {
@@ -371,9 +535,8 @@
         state.currentTask = r;
         loadDiff(r); loadCode(r);
         enableTab('diff'); enableTab('code');
-        showExportButtons();
-        switchTab('diff');
-        addMsg('system', '✅ 已跳过异常行，请查看结果。');
+        showExportButtons(); switchTab('diff');
+        addMsg('system', '✅ 已跳过异常行。');
       }
     }).catch(function (e) { toast('操作失败: ' + e.message, 'error'); });
   }
@@ -392,7 +555,7 @@
       b.addEventListener('click', function () { if (!b.disabled) switchTab(b.dataset.view); });
     });
 
-    // Save skill checkbox → name input
+    // Save skill checkbox
     dom.saveSkillCheck.addEventListener('change', function () {
       dom.saveSkillName.style.display = dom.saveSkillCheck.checked ? '' : 'none';
     });
@@ -441,7 +604,14 @@
     $('btnSkip').addEventListener('click', doSkipRow);
   }
 
-  function init() { cacheDom(); bindEvents(); console.log('MorphSheet ready'); }
+  function init() {
+    cacheDom();
+    bindEvents();
+    loadSkills();
+    loadHistory();
+    console.log('MorphSheet ready');
+  }
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();

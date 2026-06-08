@@ -167,7 +167,7 @@ def to_json_safe(obj):
     return obj
 
 
-def to_preview(df: pd.DataFrame, max_rows: int = 50) -> dict:
+def to_preview(df: pd.DataFrame, max_rows: int = 2000) -> dict:
     """将 DataFrame 转为前端预览格式，所有值转为 Python 原生类型。"""
     preview_df = df.head(max_rows).replace({np.nan: None, pd.NaT: None})
     rows = [[_to_native(v) for v in row] for row in preview_df.values.tolist()]
