@@ -509,9 +509,9 @@ td.cell-modified { background: var(--diff-modified); }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  max-width: 560px;
-  width: 90%;
-  max-height: 80vh;
+  max-width: 660px;
+  width: 92%;
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
 }

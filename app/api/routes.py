@@ -169,6 +169,33 @@ async def get_history(limit: int = 20, offset: int = 0):
     )
 
 
+@router.get("/skills/{skill_id}")
+async def get_skill_detail(skill_id: str):
+    """返回技能的完整详情，包括代码和 Schema。"""
+    skill = database.get_skill(skill_id)
+    if not skill:
+        raise HTTPException(status_code=404, detail="技能不存在")
+    source_schema = {}
+    target_spec = {}
+    try:
+        source_schema = json.loads(skill["source_schema"])
+        target_spec = json.loads(skill["target_spec"])
+    except Exception:
+        pass
+    return {
+        "skill_id": skill["skill_id"],
+        "name": skill["name"],
+        "description": skill["description"] or "",
+        "source_schema": source_schema,
+        "target_spec": target_spec,
+        "code": skill["code"],
+        "column_mapping": json.loads(skill["column_mapping"]) if skill.get("column_mapping") else {},
+        "usage_count": skill["usage_count"],
+        "created_at": skill["created_at"],
+        "updated_at": skill["updated_at"],
+    }
+
+
 @router.get("/skills", response_model=SkillsResponse)
 async def get_skills(limit: int = 20):
     skills = database.get_skills(limit=limit)

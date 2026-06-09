@@ -104,24 +104,49 @@
   }
 
   function showSkillDetail(skillId) {
-    var cards = dom.panelSkills.querySelectorAll('.skill-card');
-    var skill = null;
-    cards.forEach(function (c) {
-      if (c.getAttribute('data-skill-id') === skillId) {
-        var n = c.querySelector('.skill-name');
-        var d = c.querySelector('.skill-desc');
-        var m = c.querySelector('.skill-meta');
-        if (n && d && m) skill = { name: n.textContent, desc: d.textContent, meta: m.textContent };
-      }
-    });
-    if (!skill) return;
-
-    $('skillDetailTitle').textContent = skill.name;
-    $('skillDetailBody').innerHTML =
-      '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:6px">' + esc(skill.desc) + '</p>' +
-      '<p style="font-size:12px;color:var(--text-secondary)">' + esc(skill.meta) + '</p>' +
-      '<p style="font-size:11px;color:var(--text-secondary);margin-top:10px">💡 点击技能卡片空白区域可应用此技能。</p>';
+    $('skillDetailTitle').textContent = '加载中...';
+    $('skillDetailBody').innerHTML = '<p style="color:var(--text-secondary)">正在获取技能详情...</p>';
     $('skillDetailModal').style.display = '';
+
+    // Fetch full skill details from API
+    fetch('/api/skills/' + skillId).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (skill) {
+      var srcCols = (skill.source_schema || {}).columns || [];
+      var tgtFmt = (skill.target_spec || {}).target_format || '?';
+      var code = skill.code || '';
+
+      var html = '';
+
+      // Explanation of what this skill is
+      html += '<div style="background:rgba(76,201,240,0.08);border:1px solid var(--accent);border-radius:6px;padding:8px 10px;margin-bottom:12px;font-size:12px;line-height:1.5">';
+      html += '<b>💡 技能说明</b><br>';
+      html += '此技能保存了一段 Pandas 转换代码，适用于<strong>列结构相同</strong>的源文件。';
+      html += '应用时跳过 AI 推理，直接执行保存的代码。';
+      if (srcCols.length > 0) {
+        html += '<br><br>适用源文件需包含列: <code style="font-size:11px">' + esc(srcCols.join(', ')) + '</code>';
+      }
+      html += '</div>';
+
+      // Source schema
+      html += '<div style="margin-bottom:8px"><b>源数据 Schema:</b></div>';
+      html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">';
+      html += '列数: ' + srcCols.length + ' · 目标格式: ' + esc(tgtFmt);
+      html += ' · 使用 ' + (skill.usage_count || 0) + ' 次';
+      html += '</div>';
+
+      // Saved code
+      html += '<div style="margin-bottom:4px"><b>保存的转换代码:</b></div>';
+      html += '<div style="background:#0d1117;border-radius:6px;padding:10px;font-family:Consolas,Monaco,monospace;font-size:11px;line-height:1.5;max-height:200px;overflow:auto;white-space:pre-wrap;color:#e0e0e0">';
+      html += highlightPython(code);
+      html += '</div>';
+
+      $('skillDetailTitle').textContent = skill.name || '技能详情';
+      $('skillDetailBody').innerHTML = html;
+    }).catch(function (err) {
+      $('skillDetailBody').innerHTML = '<p style="color:var(--danger)">加载失败: ' + esc(err.message) + '</p>';
+    });
   }
 
   function loadHistory() {
