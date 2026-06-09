@@ -82,24 +82,88 @@
       }
       var html = '';
       skills.forEach(function (s) {
-        html += '<div class="skill-card" data-skill-id="' + s.skill_id + '" title="点击应用此技能">';
-        html += '<div class="skill-name">' + esc(s.name) + '</div>';
+        html += '<div class="skill-card" data-skill-id="' + s.skill_id + '">';
+        html += '<div class="skill-card-top">';
+        html += '<span class="skill-name" title="点击查看详情">' + esc(s.name) + '</span>';
+        html += '<button class="skill-del" data-del="' + s.skill_id + '" title="删除此技能">×</button>';
+        html += '</div>';
         html += '<div class="skill-desc">' + esc(s.source_schema_summary || '') + '</div>';
         html += '<div class="skill-meta">使用 ' + s.usage_count + ' 次 · ' + esc(s.target_format || '') + '</div>';
         html += '</div>';
       });
       dom.panelSkills.innerHTML = html;
-      // Click to apply skill
+
+      // Click skill name → show detail
+      dom.panelSkills.querySelectorAll('.skill-name').forEach(function (nameEl) {
+        nameEl.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var sid = nameEl.parentElement.parentElement.dataset.skillId;
+          showSkillDetail(sid);
+        });
+      });
+
+      // Click skill card → apply
       dom.panelSkills.querySelectorAll('.skill-card').forEach(function (card) {
-        card.addEventListener('click', function () {
+        card.addEventListener('click', function (e) {
+          if (e.target.classList.contains('skill-del') || e.target.classList.contains('skill-name')) return;
           var sid = card.dataset.skillId;
-          var name = card.querySelector('.skill-name').textContent;
           if (!state.currentFile) { toast('请先上传文件', 'warning'); return; }
-          addMsg('system', '🔄 应用技能: ' + name);
+          addMsg('system', '🔄 应用技能: ' + card.querySelector('.skill-name').textContent);
           doConvertWithSkill(sid);
         });
       });
+
+      // Delete button
+      dom.panelSkills.querySelectorAll('.skill-del').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var sid = btn.dataset.del;
+          if (confirm('确定删除此技能？')) {
+            API.deleteSkill(sid).then(function () {
+              toast('技能已删除', 'success');
+              loadSkills();
+            }).catch(function () { toast('删除失败', 'error'); });
+          }
+        });
+      });
     }).catch(function () {});
+  }
+
+  function showSkillDetail(skillId) {
+    // Fetch full skill data - we need code, which isn't in the list API
+    // For now, show what we have from the list
+    var cards = dom.panelSkills.querySelectorAll('.skill-card');
+    var skill = null;
+    cards.forEach(function (c) {
+      if (c.dataset.skillId === skillId) {
+        skill = {
+          name: c.querySelector('.skill-name').textContent,
+          desc: c.querySelector('.skill-desc').textContent,
+          meta: c.querySelector('.skill-meta').textContent,
+        };
+      }
+    });
+    if (!skill) return;
+
+    var html = '<div style="padding:4px">';
+    html += '<h3 style="margin-bottom:8px">' + esc(skill.name) + '</h3>';
+    html += '<p style="font-size:12px;color:var(--text-secondary)">' + esc(skill.desc) + '</p>';
+    html += '<p style="font-size:11px;color:var(--text-secondary);margin-top:4px">' + esc(skill.meta) + '</p>';
+    html += '<p style="font-size:11px;color:var(--text-secondary);margin-top:8px">点击技能卡片空白区域可应用，点击名称查看详情。</p>';
+    html += '</div>';
+    dom.modalBody.innerHTML = html;
+    dom.confirmModal.style.display = '';
+    // Override modal button behavior for detail view
+    $('btnAccept').style.display = 'none';
+    $('btnChat').style.display = 'none';
+    $('btnSkip').textContent = '关闭';
+    $('btnSkip').onclick = function () {
+      hideModal();
+      $('btnAccept').style.display = '';
+      $('btnChat').style.display = '';
+      $('btnSkip').textContent = '3. 跳过此行';
+      $('btnSkip').onclick = doSkipRow;
+    };
   }
 
   function loadHistory() {

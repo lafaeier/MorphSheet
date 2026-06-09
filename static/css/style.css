@@ -724,7 +724,12 @@ td.cell-modified { background: var(--diff-modified); }
 }
 .history-item:hover, .skill-card:hover { background: var(--bg-tertiary); }
 .skill-card.matched { border-color: var(--success); }
-.history-name, .skill-name { font-size: 13px; font-weight: 500; }
+.skill-card-top { display: flex; justify-content: space-between; align-items: center; }
+.history-name, .skill-name { font-size: 13px; font-weight: 500; cursor: pointer; }
+.skill-name:hover { color: var(--accent); text-decoration: underline; }
+.skill-del { background: none; border: none; color: var(--text-secondary); cursor: pointer;
+  font-size: 16px; padding: 0 4px; line-height: 1; border-radius: 3px; }
+.skill-del:hover { color: var(--danger); background: rgba(239,71,111,0.1); }
 .history-meta, .skill-meta { font-size: 11px; color: var(--text-secondary); }
 .history-status.completed { color: var(--success); }
 .history-status.failed { color: var(--danger); }
