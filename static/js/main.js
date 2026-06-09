@@ -120,13 +120,20 @@
       var html = '';
 
       // Explanation of what this skill is
-      html += '<div style="background:rgba(76,201,240,0.08);border:1px solid var(--accent);border-radius:6px;padding:8px 10px;margin-bottom:12px;font-size:12px;line-height:1.5">';
-      html += '<b>💡 技能说明</b><br>';
-      html += '此技能保存了一段 Pandas 转换代码，适用于<strong>列结构相同</strong>的源文件。';
-      html += '应用时跳过 AI 推理，直接执行保存的代码。';
+      html += '<div style="background:rgba(76,201,240,0.08);border:1px solid var(--accent);border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:12px;line-height:1.6">';
+      html += '<b>💡 技能本质</b><br>';
+      html += '技能 = <b>AI 生成的 Pandas 代码</b> + <b>源列结构记录</b>。应用时跳过 LLM，直接沙箱执行代码。<br><br>';
+
+      html += '<b>📥 源文件限制:</b> 不限制文件格式 (.xlsx/.xls/.csv 均可)，';
+      html += '但<strong>列名和列数必须与保存时相同</strong>，否则代码执行会出错。<br>';
       if (srcCols.length > 0) {
-        html += '<br><br>适用源文件需包含列: <code style="font-size:11px">' + esc(srcCols.join(', ')) + '</code>';
+        html += '所需列: <code style="font-size:10px;word-break:break-all">' + esc(srcCols.join(', ')) + '</code><br>';
       }
+
+      html += '<b>📤 目标格式:</b> 保存时目标格式为 <b>' + esc(tgtFmt) + '</b>，';
+      html += '但<strong>以当前界面选择的格式为准</strong>（保存格式仅作参考）。<br>';
+
+      html += '<b>⚠ 注意:</b> 若当前文件列结构与保存时不同，技能执行会失败。届时可回退到普通 AI 对话模式。';
       html += '</div>';
 
       // Source schema
