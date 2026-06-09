@@ -64,6 +64,7 @@
             <div class="chat-input">
               <input type="text" id="chatInput" placeholder="输入指令，如：1.将日期统一为YYYYMMDD 2.清除电话分隔符..." disabled>
               <button id="btnSend" disabled>发送</button>
+              <button id="btnRefresh" class="btn-secondary btn-sm" title="清空对话，重新开始">🔄</button>
             </div>
           </div>
         </div>
@@ -101,6 +102,16 @@
         <div class="step pending" data-step="executing"><span class="step-icon">○</span><span class="step-label">沙箱执行中</span></div>
         <div class="step pending" data-step="diffing"><span class="step-icon">○</span><span class="step-label">生成 Diff 对比</span></div>
         <div class="step pending" data-step="awaiting"><span class="step-icon">○</span><span class="step-label">等待导出确认</span></div>
+      </div>
+      <!-- 脏数据预警区 -->
+      <div class="alert-area" id="alertArea" style="display:none">
+        <div class="alert-header">⚠ 数据异常</div>
+        <div class="alert-list" id="alertList"></div>
+        <div class="alert-actions">
+          <button class="btn-primary btn-sm" id="alertAccept">采纳建议</button>
+          <button class="btn-secondary btn-sm" id="alertChat">继续对话</button>
+          <button class="btn-danger btn-sm" id="alertSkip">跳过</button>
+        </div>
       </div>
     </aside>
 

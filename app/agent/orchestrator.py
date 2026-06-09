@@ -2,8 +2,9 @@ import uuid
 import pandas as pd
 import numpy as np
 from app.processing import schema as schema_module, diff as diff_module, file_writer
-from app.agent import code_generator
+from app.agent import code_generator, sandbox
 from app.processing.schema import to_json_safe
+from app.storage import database
 from app.logger import get_logger
 
 log = get_logger(__name__)
@@ -31,7 +32,7 @@ class Orchestrator:
             log.info("Target set: id=%s format=%s", file_id[:8], target_spec.get("target_format"))
 
     def start_convert(self, file_id: str, instructions: str,
-                      websocket_send=None) -> dict:
+                      websocket_send=None, use_skill_id: str = None) -> dict:
         file_entry = self.file_store.get(file_id)
         if not file_entry:
             return {"status": "failed", "error": "文件不存在"}
@@ -41,18 +42,82 @@ class Orchestrator:
 
         task_id = str(uuid.uuid4())
         self.tasks[task_id] = {
-            "file_id": file_id,
-            "source_df": source_df,
-            "target_spec": target_spec,
-            "result_df": None,
-            "code": None,
-            "status": "in_progress",
+            "file_id": file_id, "source_df": source_df,
+            "target_spec": target_spec, "result_df": None,
+            "code": None, "status": "in_progress",
             "instructions": instructions,
         }
+
+        # 如果指定了技能，使用保存的代码直接执行
+        if use_skill_id:
+            skill = database.get_skill(use_skill_id)
+            if skill:
+                log.info("Using skill: id=%s name=%s", use_skill_id[:8], skill["name"])
+                database.increment_skill_usage(use_skill_id)
+                return self._run_skill(task_id, source_df, target_spec, skill, websocket_send)
+            else:
+                log.warning("Skill not found: %s", use_skill_id)
 
         log.info("Convert started: task=%s file=%s instructions=%s",
                  task_id[:8], file_id[:8], instructions[:80])
         return self._run_convert(task_id, instructions, source_df, target_spec, websocket_send)
+
+    def _run_skill(self, task_id: str, source_df: pd.DataFrame,
+                   target_spec: dict, skill: dict, websocket_send) -> dict:
+        """使用已保存的技能代码直接执行转换。"""
+        code = skill.get("code", "")
+        if not code:
+            return {"status": "failed", "task_id": task_id, "error": "技能中没有保存代码"}
+
+        log.info("Running skill code: task=%s", task_id[:8])
+
+        # 安全扫描
+        issues = sandbox.scan_code(code)
+        if issues:
+            return {"status": "failed", "task_id": task_id,
+                    "error": "技能代码安全检查未通过: " + "; ".join(issues)}
+
+        # 沙箱执行
+        exec_result = sandbox.execute(code, source_df)
+        if not exec_result["success"]:
+            log.error("Skill execution failed: %s", exec_result.get("error"))
+            return {"status": "failed", "task_id": task_id,
+                    "error": "技能执行失败: " + str(exec_result.get("error"))}
+
+        result_df = exec_result["dataframe"]
+        log.info("Skill success: task=%s rows=%d->%d", task_id[:8], len(source_df), len(result_df))
+
+        # 后置脏数据检测
+        dirty = _detect_coerced_data(source_df, result_df)
+        if dirty:
+            log.info("Skill: dirty data detected: %d issues", len(dirty))
+            self.tasks[task_id].update({
+                "result_df": result_df, "code": code,
+                "status": "awaiting_human_confirmation",
+                "pending_issues": dirty,
+            })
+            return to_json_safe({
+                "status": "awaiting_human_confirmation",
+                "task_id": task_id,
+                "detected_issues": dirty,
+            })
+
+        diff_data = diff_module.compute(source_df, result_df)
+        preview = schema_module.to_preview(result_df)
+        src_preview = schema_module.to_preview(source_df)
+
+        self.tasks[task_id].update({
+            "result_df": result_df, "code": code,
+            "status": "awaiting_confirmation",
+        })
+
+        return to_json_safe({
+            "status": "awaiting_confirmation", "task_id": task_id,
+            "preview": preview, "source_preview": src_preview,
+            "diff": diff_data, "code": code,
+            "explanation": "使用技能: " + skill.get("name", ""),
+            "retries": 0,
+        })
 
     def _run_convert(self, task_id: str, instructions: str,
                      source_df: pd.DataFrame, target_spec: dict,
@@ -214,9 +279,28 @@ class Orchestrator:
 
 
 def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
-                         max_issues: int = 20) -> list[dict]:
-    """检测脏数据：NaN + 格式不匹配 + 意外删除。"""
+                         max_issues: int = 30) -> list[dict]:
+    """检测脏数据：NaN + 格式不匹配 + 空值 + 异常值 + 意外删除。"""
     issues = []
+
+    # ---- 0. 空值/空白检测 ----
+    for col in result_df.columns:
+        if len(issues) >= max_issues:
+            break
+        for i in range(len(result_df)):
+            if len(issues) >= max_issues:
+                break
+            res_val = result_df.iloc[i][col]
+            # 检测空字符串或仅空白
+            if isinstance(res_val, str) and res_val.strip() == '':
+                src_val = source_df.iloc[i][col] if i < len(source_df) else None
+                if src_val is not None and str(src_val).strip() != '':
+                    issues.append({
+                        "row": i, "column": str(col),
+                        "value": str(src_val)[:60],
+                        "error": "第{}行 \"{}\" 原值 \"{}\" 转换后变为空字符串".format(i, str(col), str(src_val)[:30]),
+                        "suggested_action": "检查该行数据是否有效",
+                    })
 
     # ---- 1. NaN/NaT 检测 ----
     for col in result_df.columns:

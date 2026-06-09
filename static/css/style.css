@@ -741,6 +741,19 @@ tr.row-removed { background: var(--diff-removed); }
 td.cell-added { background: var(--diff-added); }
 td.cell-modified { background: var(--diff-modified); }
 
+/* ---- Alert area (dirty data in sidebar) ---- */
+.alert-area {
+  margin: 8px; padding: 10px; border: 1px solid var(--danger);
+  border-radius: var(--radius); background: rgba(239,71,111,0.08);
+  overflow-y: auto; max-height: 40%;
+}
+.alert-header { font-size: 13px; font-weight: 600; color: var(--danger); margin-bottom: 6px; }
+.alert-list { font-size: 11px; }
+.alert-item { padding: 4px 0; border-bottom: 1px solid rgba(239,71,111,0.15); }
+.alert-item .alert-row { color: var(--text-primary); }
+.alert-item .alert-detail { color: var(--text-secondary); font-size: 10px; }
+.alert-actions { display: flex; gap: 4px; margin-top: 8px; }
+
 /* ---- Status log ---- */
 .status-log { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 .status-log-item { font-size: 11px; color: var(--text-secondary); padding: 3px 0; }

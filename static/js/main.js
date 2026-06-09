@@ -51,6 +51,12 @@
     dom.filePreviewTable = $('filePreviewTable');
     dom.panelHistory    = $('panel-history');
     dom.panelSkills     = $('panel-skills');
+    dom.alertArea       = $('alertArea');
+    dom.alertList       = $('alertList');
+    dom.alertAccept     = $('alertAccept');
+    dom.alertChat       = $('alertChat');
+    dom.alertSkip       = $('alertSkip');
+    dom.btnRefresh      = $('btnRefresh');
   }
 
   // ============================================================
@@ -475,8 +481,19 @@
 
   function cancelConvert() { resetAfterExport(); }
 
+  function refreshChat() {
+    state.conversationHistory = [];
+    dom.chatMsgs.innerHTML = '<div class="message system"><div class="message-content">对话已刷新。请上传文件并输入清洗指令。</div></div>';
+    hideAlert();
+    hideExportButtons();
+    setStep('idle');
+    state.currentTask = null;
+    toast('对话已刷新', 'info');
+  }
+
   function resetAfterExport() {
     setStep('idle'); state.currentTask = null; hideExportButtons();
+    hideAlert();
     state.allSourceRows = []; state.allTargetRows = []; state.diffLoadedCount = 0;
     dom.mainTabBar.querySelectorAll('.main-tab').forEach(function (b) {
       if (b.dataset.view === 'diff' || b.dataset.view === 'code') b.disabled = true;
@@ -488,6 +505,9 @@
   // Dirty Data Modal
   // ============================================================
   function showModal(issues) {
+    // Also show in sidebar alert area
+    showAlert(issues);
+    // Keep modal for backward compatibility (will be removed once alert area is stable)
     var html = '';
     issues.forEach(function (iss) {
       html += '<div class="issue-item">';
@@ -499,6 +519,28 @@
     });
     dom.modalBody.innerHTML = html;
     dom.confirmModal.style.display = '';
+  }
+
+  function showAlert(issues) {
+    var html = '';
+    var maxShow = Math.min(issues.length, 8);
+    for (var i = 0; i < maxShow; i++) {
+      var iss = issues[i];
+      html += '<div class="alert-item">';
+      html += '<div class="alert-row"><b>行 ' + iss.row + '</b> ' + esc(String(iss.column)) + '</div>';
+      html += '<div class="alert-detail">' + esc(String(iss.error).substring(0, 60)) + '</div>';
+      html += '</div>';
+    }
+    if (issues.length > maxShow) {
+      html += '<div class="alert-item" style="color:var(--text-secondary)">...还有 ' + (issues.length - maxShow) + ' 个问题</div>';
+    }
+    dom.alertList.innerHTML = html;
+    dom.alertArea.style.display = '';
+  }
+
+  function hideAlert() {
+    dom.alertArea.style.display = 'none';
+    dom.alertList.innerHTML = '';
   }
 
   function hideModal() { dom.confirmModal.style.display = 'none'; }
@@ -602,6 +644,14 @@
     $('btnAccept').addEventListener('click', doAcceptSuggestion);
     $('btnChat').addEventListener('click', doContinueChat);
     $('btnSkip').addEventListener('click', doSkipRow);
+
+    // Alert area (sidebar)
+    dom.alertAccept.addEventListener('click', doAcceptSuggestion);
+    dom.alertChat.addEventListener('click', doContinueChat);
+    dom.alertSkip.addEventListener('click', doSkipRow);
+
+    // Refresh chat
+    dom.btnRefresh.addEventListener('click', refreshChat);
   }
 
   function init() {

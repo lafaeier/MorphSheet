@@ -72,7 +72,8 @@ async def convert(req: ConvertRequest):
     result = orchestrator.start_convert(
         file_id=req.file_id,
         instructions=req.instructions,
-        websocket_send=None,  # Phase 3 前端 WebSocket 接入后替换
+        websocket_send=None,
+        use_skill_id=req.use_skill_id,
     )
 
     return ConvertResponse(**result)
