@@ -130,8 +130,6 @@
   }
 
   function showSkillDetail(skillId) {
-    // Fetch full skill data - we need code, which isn't in the list API
-    // For now, show what we have from the list
     var cards = dom.panelSkills.querySelectorAll('.skill-card');
     var skill = null;
     cards.forEach(function (c) {
@@ -145,25 +143,26 @@
     });
     if (!skill) return;
 
+    state._skillDetailMode = true;
     var html = '<div style="padding:4px">';
     html += '<h3 style="margin-bottom:8px">' + esc(skill.name) + '</h3>';
     html += '<p style="font-size:12px;color:var(--text-secondary)">' + esc(skill.desc) + '</p>';
     html += '<p style="font-size:11px;color:var(--text-secondary);margin-top:4px">' + esc(skill.meta) + '</p>';
-    html += '<p style="font-size:11px;color:var(--text-secondary);margin-top:8px">点击技能卡片空白区域可应用，点击名称查看详情。</p>';
+    html += '<p style="font-size:11px;color:var(--text-secondary);margin-top:8px">点击技能卡片空白区域可应用此技能。</p>';
     html += '</div>';
     dom.modalBody.innerHTML = html;
-    dom.confirmModal.style.display = '';
-    // Override modal button behavior for detail view
     $('btnAccept').style.display = 'none';
     $('btnChat').style.display = 'none';
     $('btnSkip').textContent = '关闭';
-    $('btnSkip').onclick = function () {
-      hideModal();
-      $('btnAccept').style.display = '';
-      $('btnChat').style.display = '';
-      $('btnSkip').textContent = '3. 跳过此行';
-      $('btnSkip').onclick = doSkipRow;
-    };
+    dom.confirmModal.style.display = '';
+  }
+
+  function hideSkillDetail() {
+    state._skillDetailMode = false;
+    hideModal();
+    $('btnAccept').style.display = '';
+    $('btnChat').style.display = '';
+    $('btnSkip').textContent = '3. 跳过此行';
   }
 
   function loadHistory() {
@@ -609,7 +608,13 @@
 
   function hideModal() { dom.confirmModal.style.display = 'none'; }
 
+  function maybeCloseSkillDetail() {
+    if (state._skillDetailMode) { hideSkillDetail(); return true; }
+    return false;
+  }
+
   function doAcceptSuggestion() {
+    if (maybeCloseSkillDetail()) return;
     hideModal();
     if (!state.currentTask) return;
     addMsg('system', '🔧 采纳建议，移除异常行...');
@@ -625,6 +630,7 @@
   }
 
   function doContinueChat() {
+    if (maybeCloseSkillDetail()) return;
     hideModal();
     addMsg('system', '💬 请在对话区输入补充指令来修正脏数据，然后点击发送。');
     switchTab('chat');
@@ -633,6 +639,7 @@
   }
 
   function doSkipRow() {
+    if (maybeCloseSkillDetail()) return;
     hideModal();
     if (!state.currentTask) return;
     addMsg('system', '⏭ 跳过异常行...');
