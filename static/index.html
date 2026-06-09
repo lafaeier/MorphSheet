@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -62,9 +62,11 @@
               <div class="message system"><div class="message-content">欢迎使用 MorphSheet<br>请上传文件，然后输入清洗指令。</div></div>
             </div>
             <div class="chat-input">
-              <input type="text" id="chatInput" placeholder="输入指令，如：1.将日期统一为YYYYMMDD 2.清除电话分隔符..." disabled>
-              <button id="btnSend" disabled>发送</button>
-              <button id="btnRefresh" class="btn-secondary btn-sm" title="清空对话，重新开始">🔄</button>
+              <textarea id="chatInput" placeholder="输入指令，如：&#10;1. 将日期统一为YYYYMMDD&#10;2. 清除电话分隔符&#10;3. 删除金额小于0的行&#10;&#10;Shift+Enter 换行，点击发送提交" disabled rows="4"></textarea>
+              <div class="chat-input-actions">
+                <button id="btnSend" disabled>发送</button>
+                <button id="btnRefresh" class="btn-secondary btn-sm" title="清空对话，重新开始">🔄 刷新</button>
+              </div>
             </div>
           </div>
         </div>

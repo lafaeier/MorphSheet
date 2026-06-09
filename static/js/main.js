@@ -735,7 +735,14 @@
 
     // Chat
     dom.btnSend.addEventListener('click', function () { doConvert(); });
-    dom.chatInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') doConvert(); });
+    dom.chatInput.addEventListener('keydown', function (e) {
+      // Ctrl+Enter or Cmd+Enter also sends
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        doConvert();
+      }
+      // Plain Enter does NOT send (allows multi-line)
+    });
     dom.btnConvert.addEventListener('click', function () { doConvert(); });
 
     // Export
