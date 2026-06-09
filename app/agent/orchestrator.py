@@ -97,6 +97,7 @@ class Orchestrator:
             if (p["row"], p["column"]) not in seen:
                 seen.add((p["row"], p["column"]))
                 dirty.append(p)
+        dirty.sort(key=lambda x: (x.get("row", 0), x.get("column", "")))
         if dirty:
             log.info("Skill: dirty data detected: %d issues", len(dirty))
             self.tasks[task_id].update({
@@ -176,6 +177,7 @@ class Orchestrator:
                     dirty.append(p)
                     if len(dirty) >= 30:
                         break
+            dirty.sort(key=lambda x: (x.get("row", 0), x.get("column", "")))
             if dirty:
                 log.info("Dirty data detected: %d issues", len(dirty))
                 send({"type": "blocking", "message": "发现异常数据，需要您的决策", "issues": dirty})
@@ -414,6 +416,7 @@ def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
                         "actionable": False,  # 已从结果中删除, 仅展示信息
                     })
 
+    issues.sort(key=lambda x: (x["row"], x["column"]))
     return issues
 
 
