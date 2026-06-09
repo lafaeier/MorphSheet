@@ -746,7 +746,7 @@ td.cell-modified { background: var(--diff-modified); }
 .issue-suggestion { color: var(--success); margin-top: 4px; }
 
 /* ---- Diff cell highlights ---- */
-tr.row-removed { background: var(--diff-removed); }
+tr.row-removed td { background: var(--diff-removed); }
 td.cell-added { background: var(--diff-added); }
 td.cell-modified { background: var(--diff-modified); }
 
