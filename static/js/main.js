@@ -74,10 +74,13 @@
   // Sidebar: Load Skills & History
   // ============================================================
   function loadSkills() {
+    console.log('loadSkills: fetching...');
+    dom.panelSkills.innerHTML = '<p class="placeholder-text">加载中...</p>';
     API.getSkills(50).then(function (data) {
+      console.log('loadSkills: got', (data.skills||[]).length, 'skills');
       var skills = data.skills || [];
       if (skills.length === 0) {
-        dom.panelSkills.innerHTML = '<p class="placeholder-text">暂无保存的技能</p>';
+        dom.panelSkills.innerHTML = '<p class="placeholder-text">暂无保存的技能<br><small>完成一次转换并保存后出现在这里</small></p>';
         return;
       }
       var html = '';
@@ -131,7 +134,10 @@
           }
         });
       });
-    }).catch(function () {});
+    }).catch(function (err) {
+      console.error('loadSkills failed:', err);
+      dom.panelSkills.innerHTML = '<p class="placeholder-text" style="color:var(--danger)">加载失败: ' + esc(String(err.message || err)) + '</p>';
+    });
   }
 
   function showSkillDetail(skillId) {
@@ -198,7 +204,9 @@
         html += '</div>';
       });
       dom.panelHistory.innerHTML = html;
-    }).catch(function () {});
+    }).catch(function (err) {
+      console.error('loadHistory failed:', err);
+    });
   }
 
   function statusLabel(s) {
@@ -689,6 +697,12 @@
         b.classList.add('active');
         var p = document.getElementById('panel-' + b.getAttribute('data-tab'));
         if (p) p.classList.add('active');
+        // Reload when switching to skills tab
+        if (b.getAttribute('data-tab') === 'skills') {
+          loadSkills();
+        } else if (b.getAttribute('data-tab') === 'history') {
+          loadHistory();
+        }
       });
     });
 
