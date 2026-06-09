@@ -2,12 +2,6 @@
  * MorphSheet - Vanilla JS (Tab UI + Sidebar + Lazy Diff)
  */
 
-// Global diagnostic function for inline onclick
-window._skillClick = function (skillId) {
-  console.log('INLINE ONCLICK FIRED! skillId:', skillId);
-  alert('Clicked skill: ' + skillId);
-};
-
 (function () {
   'use strict';
 
@@ -94,11 +88,12 @@ window._skillClick = function (skillId) {
       skills.forEach(function (s) {
         html += '<div class="skill-card" data-skill-id="' + s.skill_id + '">';
         html += '<div class="skill-card-top">';
-        html += '<span class="skill-name" title="点击查看详情" onclick="window._skillClick(\'' + s.skill_id + '\')">' + esc(s.name) + '</span>';
-        html += '<button class="skill-del" data-del="' + s.skill_id + '" title="删除此技能">×</button>';
+        html += '<span class="skill-name">' + esc(s.name) + '</span>';
+        html += '<button class="skill-del" data-del="' + s.skill_id + '" title="删除">×</button>';
         html += '</div>';
         html += '<div class="skill-desc">' + esc(s.source_schema_summary || '') + '</div>';
         html += '<div class="skill-meta">使用 ' + s.usage_count + ' 次 · ' + esc(s.target_format || '') + '</div>';
+        html += '<button class="skill-apply-btn" data-apply="' + s.skill_id + '">▶ 应用此技能</button>';
         html += '</div>';
       });
       dom.panelSkills.innerHTML = html;
@@ -631,9 +626,24 @@ window._skillClick = function (skillId) {
       dom.saveSkillName.style.display = dom.saveSkillCheck.checked ? '' : 'none';
     });
 
-    // Skill panel event delegation (handles all clicks: detail/apply/delete)
+    // Skill panel event delegation
     dom.panelSkills.addEventListener('click', function (e) {
       var target = e.target;
+
+      // Apply button
+      if (target.classList.contains('skill-apply-btn') || target.closest('.skill-apply-btn')) {
+        e.stopPropagation();
+        var applyBtn = target.classList.contains('skill-apply-btn') ? target : target.closest('.skill-apply-btn');
+        var sid = applyBtn.getAttribute('data-apply');
+        if (sid && state.currentFile) {
+          var card = applyBtn.closest('.skill-card');
+          addMsg('system', '🔄 应用技能: ' + (card ? card.querySelector('.skill-name').textContent : ''));
+          doConvertWithSkill(sid);
+        } else if (sid) {
+          toast('请先上传文件', 'warning');
+        }
+        return;
+      }
 
       // Delete button
       if (target.classList.contains('skill-del')) {
@@ -648,28 +658,11 @@ window._skillClick = function (skillId) {
         return;
       }
 
-      // Skill name → detail
-      if (target.classList.contains('skill-name')) {
-        e.stopPropagation();
-        var card = target.closest('.skill-card');
-        if (card) {
-          var sid = card.getAttribute('data-skill-id');
-          console.log('Skill name clicked:', sid);
-          showSkillDetail(sid);
-        }
-        return;
-      }
-
-      // Skill card body → apply
+      // Click anywhere else on card → show detail
       var card = target.closest('.skill-card');
-      if (card && !target.classList.contains('skill-name') && !target.classList.contains('skill-del')) {
+      if (card) {
         var sid = card.getAttribute('data-skill-id');
-        if (sid && state.currentFile) {
-          addMsg('system', '🔄 应用技能: ' + (card.querySelector('.skill-name') || {}).textContent);
-          doConvertWithSkill(sid);
-        } else if (sid && !state.currentFile) {
-          toast('请先上传文件', 'warning');
-        }
+        if (sid) showSkillDetail(sid);
       }
     });
 
