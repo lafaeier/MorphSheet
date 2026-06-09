@@ -95,45 +95,6 @@
         html += '</div>';
       });
       dom.panelSkills.innerHTML = html;
-
-      // Click skill name → show detail
-      dom.panelSkills.querySelectorAll('.skill-name').forEach(function (nameEl) {
-        nameEl.addEventListener('click', function (e) {
-          e.stopPropagation();
-          e.preventDefault();
-          var card = nameEl.closest('.skill-card');
-          if (!card) { console.error('No parent .skill-card found'); return; }
-          var sid = card.getAttribute('data-skill-id');
-          console.log('Skill name clicked, id:', sid);
-          if (!sid) { console.error('No skill-id attribute'); return; }
-          showSkillDetail(sid);
-        });
-      });
-
-      // Click skill card → apply
-      dom.panelSkills.querySelectorAll('.skill-card').forEach(function (card) {
-        card.addEventListener('click', function (e) {
-          if (e.target.classList.contains('skill-del') || e.target.classList.contains('skill-name')) return;
-          var sid = card.dataset.skillId;
-          if (!state.currentFile) { toast('请先上传文件', 'warning'); return; }
-          addMsg('system', '🔄 应用技能: ' + card.querySelector('.skill-name').textContent);
-          doConvertWithSkill(sid);
-        });
-      });
-
-      // Delete button
-      dom.panelSkills.querySelectorAll('.skill-del').forEach(function (btn) {
-        btn.addEventListener('click', function (e) {
-          e.stopPropagation();
-          var sid = btn.dataset.del;
-          if (confirm('确定删除此技能？')) {
-            API.deleteSkill(sid).then(function () {
-              toast('技能已删除', 'success');
-              loadSkills();
-            }).catch(function () { toast('删除失败', 'error'); });
-          }
-        });
-      });
     }).catch(function (err) {
       console.error('loadSkills failed:', err);
       dom.panelSkills.innerHTML = '<p class="placeholder-text" style="color:var(--danger)">加载失败: ' + esc(String(err.message || err)) + '</p>';
@@ -141,50 +102,24 @@
   }
 
   function showSkillDetail(skillId) {
-    console.log('showSkillDetail called with:', skillId);
-    try {
-      var cards = dom.panelSkills.querySelectorAll('.skill-card');
-      console.log('Found', cards.length, 'skill cards');
-      var skill = null;
-      cards.forEach(function (c) {
-        var cid = c.getAttribute('data-skill-id');
-        if (cid === skillId) {
-          var nameEl = c.querySelector('.skill-name');
-          var descEl = c.querySelector('.skill-desc');
-          var metaEl = c.querySelector('.skill-meta');
-          if (nameEl && descEl && metaEl) {
-            skill = {
-              name: nameEl.textContent,
-              desc: descEl.textContent,
-              meta: metaEl.textContent,
-            };
-          }
-        }
-      });
-      if (!skill) { console.error('Skill not found for id:', skillId); return; }
-      console.log('Showing detail for:', skill.name);
-
-      var titleEl = $('skillDetailTitle');
-      var bodyEl = $('skillDetailBody');
-      var modalEl = $('skillDetailModal');
-      console.log('Modal elements:', !!titleEl, !!bodyEl, !!modalEl);
-
-      if (!titleEl || !bodyEl || !modalEl) {
-        console.error('Modal elements missing!');
-        return;
+    var cards = dom.panelSkills.querySelectorAll('.skill-card');
+    var skill = null;
+    cards.forEach(function (c) {
+      if (c.getAttribute('data-skill-id') === skillId) {
+        var n = c.querySelector('.skill-name');
+        var d = c.querySelector('.skill-desc');
+        var m = c.querySelector('.skill-meta');
+        if (n && d && m) skill = { name: n.textContent, desc: d.textContent, meta: m.textContent };
       }
+    });
+    if (!skill) return;
 
-      titleEl.textContent = skill.name;
-      var html = '';
-      html += '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:6px">' + esc(skill.desc) + '</p>';
-      html += '<p style="font-size:12px;color:var(--text-secondary)">' + esc(skill.meta) + '</p>';
-      html += '<p style="font-size:11px;color:var(--text-secondary);margin-top:10px">💡 点击技能卡片空白区域可应用此技能。</p>';
-      bodyEl.innerHTML = html;
-      modalEl.style.display = '';
-      console.log('Modal should be visible now');
-    } catch (err) {
-      console.error('showSkillDetail error:', err.message, err.stack);
-    }
+    $('skillDetailTitle').textContent = skill.name;
+    $('skillDetailBody').innerHTML =
+      '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:6px">' + esc(skill.desc) + '</p>' +
+      '<p style="font-size:12px;color:var(--text-secondary)">' + esc(skill.meta) + '</p>' +
+      '<p style="font-size:11px;color:var(--text-secondary);margin-top:10px">💡 点击技能卡片空白区域可应用此技能。</p>';
+    $('skillDetailModal').style.display = '';
   }
 
   function loadHistory() {
@@ -687,6 +622,48 @@
     // Save skill checkbox
     dom.saveSkillCheck.addEventListener('change', function () {
       dom.saveSkillName.style.display = dom.saveSkillCheck.checked ? '' : 'none';
+    });
+
+    // Skill panel event delegation (handles all clicks: detail/apply/delete)
+    dom.panelSkills.addEventListener('click', function (e) {
+      var target = e.target;
+
+      // Delete button
+      if (target.classList.contains('skill-del')) {
+        e.stopPropagation();
+        var delId = target.getAttribute('data-del');
+        if (delId && confirm('确定删除此技能？')) {
+          API.deleteSkill(delId).then(function () {
+            toast('技能已删除', 'success');
+            loadSkills();
+          }).catch(function () { toast('删除失败', 'error'); });
+        }
+        return;
+      }
+
+      // Skill name → detail
+      if (target.classList.contains('skill-name')) {
+        e.stopPropagation();
+        var card = target.closest('.skill-card');
+        if (card) {
+          var sid = card.getAttribute('data-skill-id');
+          console.log('Skill name clicked:', sid);
+          showSkillDetail(sid);
+        }
+        return;
+      }
+
+      // Skill card body → apply
+      var card = target.closest('.skill-card');
+      if (card && !target.classList.contains('skill-name') && !target.classList.contains('skill-del')) {
+        var sid = card.getAttribute('data-skill-id');
+        if (sid && state.currentFile) {
+          addMsg('system', '🔄 应用技能: ' + (card.querySelector('.skill-name') || {}).textContent);
+          doConvertWithSkill(sid);
+        } else if (sid && !state.currentFile) {
+          toast('请先上传文件', 'warning');
+        }
+      }
     });
 
     // Sidebar
