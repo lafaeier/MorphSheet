@@ -53,6 +53,7 @@ class DataIssue(BaseModel):
     value: Any
     error: str
     suggested_action: str
+    actionable: bool = True
 
 
 class ConvertResponse(BaseModel):

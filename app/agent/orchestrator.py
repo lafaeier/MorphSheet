@@ -234,23 +234,43 @@ class Orchestrator:
             log.info("Dirty data: task=%s aborted by user", task_id[:8])
             return {"status": "cancelled"}
 
-        # accept_suggestion / skip_row: 只移除结果中真实存在的行 (actionable=True)
-        bad_rows = set()
-        for issue in task.get("pending_issues", []):
-            if issue.get("actionable", True):  # 只处理可操作的问题(跳过预扫描)
-                bad_rows.add(issue["row"])
-
-        log.info("Dirty data: task=%s action=%s removing %d rows",
-                 task_id[:8], action, len(bad_rows))
-
+        # 通过ID列匹配来移除坏行, 避免原始行号与结果行号错位
         source_df = task["source_df"].copy()
         result_df = task["result_df"].copy()
 
-        if bad_rows:
-            keep_mask = [i not in bad_rows for i in range(len(result_df))]
+        # 查找ID列用于精确匹配
+        id_col = _find_id_col(source_df, result_df)
+        bad_ids = set()
+        for issue in task.get("pending_issues", []):
+            row_idx = issue["row"]
+            col = issue.get("column", "")
+            if col == "(整行)":
+                continue
+            if not issue.get("actionable", True):
+                continue
+
+            if id_col:
+                # 优先从结果DataFrame查找 (后置扫描用结果行号)
+                if row_idx < len(result_df):
+                    id_val = str(result_df.iloc[row_idx][id_col])
+                    bad_ids.add(id_val)
+                # 回退到源DataFrame (预扫描用原始行号)
+                elif row_idx < len(source_df):
+                    id_val = str(source_df.iloc[row_idx][id_col])
+                    bad_ids.add(id_val)
+            else:
+                bad_ids.add(str(row_idx))
+
+        removed_count = 0
+        if bad_ids and id_col:
+            keep_mask = [str(result_df.iloc[i][id_col]) not in bad_ids for i in range(len(result_df))]
+            removed_count = len(result_df) - sum(keep_mask)
             clean_result = result_df[keep_mask].reset_index(drop=True)
         else:
             clean_result = result_df
+
+        log.info("Dirty data: task=%s action=%s removing %d rows (by %s)",
+                 task_id[:8], action, removed_count, id_col or "index")
 
         diff_data = diff_module.compute(source_df, clean_result)
         preview = schema_module.to_preview(clean_result)
@@ -269,7 +289,7 @@ class Orchestrator:
             "source_preview": src_preview,
             "diff": diff_data,
             "code": task.get("code", ""),
-            "explanation": "已跳过 " + str(len(bad_rows)) + " 个异常行",
+            "explanation": "已移除 " + str(removed_count) + " 个异常行",
         })
 
     def confirm_export(self, task_id: str, save_as_skill: bool = False,
@@ -532,6 +552,18 @@ def _find_numeric_columns(df: pd.DataFrame) -> list[str]:
         if any(kw in col_lower for kw in num_keywords):
             cols.append(col)
     return cols
+
+
+def _find_id_col(source_df: pd.DataFrame, result_df: pd.DataFrame) -> str | None:
+    """在两个DataFrame中找到共同的ID列。"""
+    common = set(source_df.columns) & set(result_df.columns)
+    id_patterns = ['id', 'ID', '编号', 'CUST', 'EMP', '员工']
+    for col in common:
+        col_lower = col.lower()
+        for pat in id_patterns:
+            if pat.lower() in col_lower:
+                return col
+    return None
 
 
 orchestrator = Orchestrator()
