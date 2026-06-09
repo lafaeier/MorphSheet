@@ -232,10 +232,11 @@ class Orchestrator:
             log.info("Dirty data: task=%s aborted by user", task_id[:8])
             return {"status": "cancelled"}
 
-        # accept_suggestion / skip_row: 移除坏行
+        # accept_suggestion / skip_row: 只移除结果中真实存在的行 (actionable=True)
         bad_rows = set()
         for issue in task.get("pending_issues", []):
-            bad_rows.add(issue["row"])
+            if issue.get("actionable", True):  # 只处理可操作的问题(跳过预扫描)
+                bad_rows.add(issue["row"])
 
         log.info("Dirty data: task=%s action=%s removing %d rows",
                  task_id[:8], action, len(bad_rows))
@@ -302,7 +303,8 @@ class Orchestrator:
 
 def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
                          max_issues: int = 30) -> list[dict]:
-    """检测脏数据：NaN + 格式不匹配 + 空值 + 异常值 + 意外删除。"""
+    """检测脏数据：NaN + 格式不匹配 + 空值 + 异常值 + 意外删除。
+    所有 issue 都带 actionable=True，表示存在于结果中可操作。"""
     issues = []
 
     # ---- 0. 空值/空白检测 ----
@@ -338,6 +340,7 @@ def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
                     "value": "NaN (转换失败)",
                     "error": "结果第{}行 \"{}\" 的值在转换后变为空".format(i, str(col)),
                     "suggested_action": "跳过此行，或通过对话补充指令修正",
+                    "actionable": True,
                 })
 
     # ---- 2. 格式不匹配检测 (每列检查) ----
@@ -381,6 +384,7 @@ def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
                         "error": "第{}行 \"{}\" 的值 \"{}\" 未正确转换 (期望格式: {}, 实际: {})".format(
                             i, str(col), res_str[:30], dominant, res_pat),
                         "suggested_action": "跳过此行，或通过对话补充指令修正 \"{}\" 的值".format(str(col)),
+                        "actionable": True,
                     })
 
     # ---- 3. 意外删除检测 (通过ID列对比) ----
@@ -466,6 +470,7 @@ def _pre_scan_source(df: pd.DataFrame, instructions: str) -> list[dict]:
                             "value": val,
                             "error": "源数据第{}行 \"{}\" = \"{}\" 为非法日期(超出合理范围)".format(i, col, val),
                             "suggested_action": "跳过此行或手动修正日期值",
+                            "actionable": False,  # 预扫描问题，可能已被LLM代码处理
                         })
                 except ValueError:
                     issues.append({
@@ -473,6 +478,7 @@ def _pre_scan_source(df: pd.DataFrame, instructions: str) -> list[dict]:
                         "value": val,
                         "error": "源数据第{}行 \"{}\" = \"{}\" 为非法日期格式".format(i, col, val),
                         "suggested_action": "跳过此行或手动修正日期值",
+                        "actionable": False,
                     })
 
     # 检测明显非法数值
@@ -495,6 +501,7 @@ def _pre_scan_source(df: pd.DataFrame, instructions: str) -> list[dict]:
                         "value": val,
                         "error": "源数据第{}行 \"{}\" = \"{}\" 包含非数字字符".format(i, col, val),
                         "suggested_action": "跳过此行或手动修正数值",
+                        "actionable": False,
                     })
 
     return issues
