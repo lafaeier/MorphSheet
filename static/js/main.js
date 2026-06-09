@@ -1,6 +1,13 @@
 /**
  * MorphSheet - Vanilla JS (Tab UI + Sidebar + Lazy Diff)
  */
+
+// Global diagnostic function for inline onclick
+window._skillClick = function (skillId) {
+  console.log('INLINE ONCLICK FIRED! skillId:', skillId);
+  alert('Clicked skill: ' + skillId);
+};
+
 (function () {
   'use strict';
 
@@ -87,7 +94,7 @@
       skills.forEach(function (s) {
         html += '<div class="skill-card" data-skill-id="' + s.skill_id + '">';
         html += '<div class="skill-card-top">';
-        html += '<span class="skill-name" title="点击查看详情">' + esc(s.name) + '</span>';
+        html += '<span class="skill-name" title="点击查看详情" onclick="window._skillClick(\'' + s.skill_id + '\')">' + esc(s.name) + '</span>';
         html += '<button class="skill-del" data-del="' + s.skill_id + '" title="删除此技能">×</button>';
         html += '</div>';
         html += '<div class="skill-desc">' + esc(s.source_schema_summary || '') + '</div>';
