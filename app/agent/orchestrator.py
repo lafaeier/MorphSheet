@@ -87,8 +87,16 @@ class Orchestrator:
         result_df = exec_result["dataframe"]
         log.info("Skill success: task=%s rows=%d->%d", task_id[:8], len(source_df), len(result_df))
 
-        # 后置脏数据检测
+        # 预扫描 + 后置脏数据检测
+        pre_issues = _pre_scan_source(source_df, "date amount")  # generic scan for skills
         dirty = _detect_coerced_data(source_df, result_df)
+        seen = set()
+        for d in dirty:
+            seen.add((d["row"], d["column"]))
+        for p in pre_issues:
+            if (p["row"], p["column"]) not in seen:
+                seen.add((p["row"], p["column"]))
+                dirty.append(p)
         if dirty:
             log.info("Skill: dirty data detected: %d issues", len(dirty))
             self.tasks[task_id].update({
@@ -139,6 +147,9 @@ class Orchestrator:
                   source_schema["columns"], source_schema["row_count"],
                   list(source_schema.get("column_patterns", {}).keys()))
 
+        # 预扫描: 在 LLM 代码执行前, 检查源数据中明显的问题值
+        pre_scan_issues = _pre_scan_source(source_df, instructions)
+
         send({"type": "phase", "phase": "generating_code", "message": "正在生成 Pandas 转换代码..."})
         log.info("Calling LLM for code generation...")
         result = code_generator.generate_and_execute(
@@ -152,8 +163,19 @@ class Orchestrator:
                      len(source_df), len(result["result_df"]))
             log.debug("Generated code:\n%s", result.get("code", "")[:2000])
 
-            # 后置脏数据检测
+            # 后置脏数据检测 + 合并预扫描结果
             dirty = _detect_coerced_data(source_df, result["result_df"])
+            # 合并预扫描问题 (去重: 同一行+列只保留一个)
+            seen = set()
+            for d in dirty:
+                seen.add((d["row"], d["column"]))
+            for p in pre_scan_issues:
+                key = (p["row"], p["column"])
+                if key not in seen:
+                    seen.add(key)
+                    dirty.append(p)
+                    if len(dirty) >= 30:
+                        break
             if dirty:
                 log.info("Dirty data detected: %d issues", len(dirty))
                 send({"type": "blocking", "message": "发现异常数据，需要您的决策", "issues": dirty})
@@ -311,11 +333,10 @@ def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
                 break
             res_val = result_df.iloc[i][col]
             if pd.isna(res_val) or (isinstance(res_val, str) and 'NaT' in res_val):
-                src_val = str(source_df.iloc[i][col]) if i < len(source_df) else "?"
                 issues.append({
                     "row": i, "column": str(col),
-                    "value": src_val[:60],
-                    "error": "第{}行 \"{}\" 原始值 \"{}\" 转换后变为空".format(i, str(col), src_val[:30]),
+                    "value": "NaN (转换失败)",
+                    "error": "结果第{}行 \"{}\" 的值在转换后变为空".format(i, str(col)),
                     "suggested_action": "跳过此行，或通过对话补充指令修正",
                 })
 
@@ -416,6 +437,90 @@ def _classify_format(val: str) -> str:
     if '@' in v and '.' in v.split('@')[-1]:
         return "email"
     return "other"
+
+
+def _pre_scan_source(df: pd.DataFrame, instructions: str) -> list[dict]:
+    """在 LLM 执行前预扫描源数据，找出明显的问题值。
+    即使这些行后续被其他操作(如删除空行)移除,
+    也能在脏数据报告中体现出来。"""
+    issues = []
+    instr_lower = instructions.lower()
+
+    # 检测日期列的明显非法值
+    date_cols = _find_date_columns(df)
+    for col in date_cols:
+        for i in range(len(df)):
+            if len(issues) >= 20:
+                break
+            val = str(df.iloc[i][col]).strip()
+            if not val or val == 'nan':
+                continue
+            # 检测明显非法的日期值 (如 99999999, 00000000)
+            import re
+            if re.match(r'^\d{8}$', val):
+                try:
+                    y, m, d = int(val[:4]), int(val[4:6]), int(val[6:8])
+                    if y < 1900 or y > 2100 or m < 1 or m > 12 or d < 1 or d > 31:
+                        issues.append({
+                            "row": i, "column": col,
+                            "value": val,
+                            "error": "源数据第{}行 \"{}\" = \"{}\" 为非法日期(超出合理范围)".format(i, col, val),
+                            "suggested_action": "跳过此行或手动修正日期值",
+                        })
+                except ValueError:
+                    issues.append({
+                        "row": i, "column": col,
+                        "value": val,
+                        "error": "源数据第{}行 \"{}\" = \"{}\" 为非法日期格式".format(i, col, val),
+                        "suggested_action": "跳过此行或手动修正日期值",
+                    })
+
+    # 检测明显非法数值
+    if 'amount' in instr_lower or '金额' in instructions or 'salary' in instr_lower or '工资' in instructions:
+        num_cols = _find_numeric_columns(df)
+        for col in num_cols:
+            for i in range(len(df)):
+                if len(issues) >= 20:
+                    break
+                val = str(df.iloc[i][col]).strip()
+                if not val or val == 'nan':
+                    continue
+                # 检查是否包含非数字字符(排除常见分隔符)
+                cleaned = val.replace(',', '').replace('¥', '').replace('$', '').replace(' ', '').replace('%', '')
+                try:
+                    float(cleaned)
+                except ValueError:
+                    issues.append({
+                        "row": i, "column": col,
+                        "value": val,
+                        "error": "源数据第{}行 \"{}\" = \"{}\" 包含非数字字符".format(i, col, val),
+                        "suggested_action": "跳过此行或手动修正数值",
+                    })
+
+    return issues
+
+
+def _find_date_columns(df: pd.DataFrame) -> list[str]:
+    """识别 DataFrame 中可能是日期列的列名。"""
+    date_keywords = ['date', '日期', '时间', 'time', 'dt', '年月', '签约', '入职', 'birth', '生日']
+    cols = []
+    for col in df.columns:
+        col_lower = col.lower()
+        if any(kw in col_lower for kw in date_keywords):
+            cols.append(col)
+    return cols
+
+
+def _find_numeric_columns(df: pd.DataFrame) -> list[str]:
+    """识别可能是数值列的列名。"""
+    num_keywords = ['amount', '金额', 'salary', '工资', 'price', '价格', '数量', 'qty',
+                    'money', '收入', '支出', '费用', 'cost', 'fee', '基本工资', '签约金额']
+    cols = []
+    for col in df.columns:
+        col_lower = col.lower()
+        if any(kw in col_lower for kw in num_keywords):
+            cols.append(col)
+    return cols
 
 
 orchestrator = Orchestrator()
