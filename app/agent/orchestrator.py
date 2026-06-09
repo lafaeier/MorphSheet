@@ -411,6 +411,7 @@ def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
                         "value": str(row_match.iloc[0].to_dict())[:100],
                         "error": "第{}行 ({}={}) 在转换中被删除".format(int(idx), id_col, did),
                         "suggested_action": "该行可能因数据不完整被自动删除",
+                        "actionable": False,  # 已从结果中删除, 仅展示信息
                     })
 
     return issues
