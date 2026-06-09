@@ -142,24 +142,26 @@ class Orchestrator:
 
         if action == "abort":
             task["status"] = "cancelled"
+            log.info("Dirty data: task=%s aborted by user", task_id[:8])
             return {"status": "cancelled"}
 
-        # accept_suggestion / skip_row: 移除坏行后重新执行
+        # accept_suggestion / skip_row: 移除坏行
         bad_rows = set()
         for issue in task.get("pending_issues", []):
             bad_rows.add(issue["row"])
+
+        log.info("Dirty data: task=%s action=%s removing %d rows",
+                 task_id[:8], action, len(bad_rows))
 
         source_df = task["source_df"].copy()
         result_df = task["result_df"].copy()
 
         if bad_rows:
-            # 从结果中删除坏行（索引基于结果 DataFrame）
             keep_mask = [i not in bad_rows for i in range(len(result_df))]
             clean_result = result_df[keep_mask].reset_index(drop=True)
         else:
             clean_result = result_df
 
-        # 现在不需要脏数据检测了，直接生成 diff
         diff_data = diff_module.compute(source_df, clean_result)
         preview = schema_module.to_preview(clean_result)
         src_preview = schema_module.to_preview(source_df)
@@ -167,6 +169,7 @@ class Orchestrator:
         task.update({
             "result_df": clean_result,
             "status": "awaiting_confirmation",
+            "pending_issues": [],
         })
 
         return to_json_safe({
@@ -211,9 +214,11 @@ class Orchestrator:
 
 
 def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
-                         max_issues: int = 10) -> list[dict]:
-    """检测脏数据：扫描结果中的 NaN/NaT，只检测值被强制转换的单元格。"""
+                         max_issues: int = 20) -> list[dict]:
+    """检测脏数据：NaN + 格式不匹配 + 意外删除。"""
     issues = []
+
+    # ---- 1. NaN/NaT 检测 ----
     for col in result_df.columns:
         if len(issues) >= max_issues:
             break
@@ -221,16 +226,112 @@ def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
             if len(issues) >= max_issues:
                 break
             res_val = result_df.iloc[i][col]
-            # 只检测值被变为 NaN/NaT 的情况（不包括整行删除）
-            is_bad = pd.isna(res_val) or (isinstance(res_val, str) and ('NaT' in res_val or res_val == 'nan'))
-            if is_bad:
+            if pd.isna(res_val) or (isinstance(res_val, str) and 'NaT' in res_val):
+                src_val = str(source_df.iloc[i][col]) if i < len(source_df) else "?"
                 issues.append({
                     "row": i, "column": str(col),
-                    "value": "NaN (值无法转换)",
-                    "error": "第{}行 \"{}\" 的值在转换后变为空".format(i, str(col)),
-                    "suggested_action": "跳过第{}行，该行数据包含不可转换的值".format(i),
+                    "value": src_val[:60],
+                    "error": "第{}行 \"{}\" 原始值 \"{}\" 转换后变为空".format(i, str(col), src_val[:30]),
+                    "suggested_action": "跳过此行，或通过对话补充指令修正",
                 })
+
+    # ---- 2. 格式不匹配检测 (每列检查) ----
+    import re
+    for col in result_df.columns:
+        if len(issues) >= max_issues:
+            break
+        # 取结果中非空值分析主导格式
+        valid_vals = result_df[col].dropna()
+        valid_strs = [str(v) for v in valid_vals if str(v).strip()]
+        if len(valid_strs) < 5:
+            continue
+
+        # 判断该列的主导格式
+        patterns = {}
+        for v in valid_strs[:100]:
+            p = _classify_format(v)
+            patterns[p] = patterns.get(p, 0) + 1
+        if not patterns:
+            continue
+        dominant = max(patterns, key=patterns.get)
+        dominant_pct = patterns[dominant] / len(valid_strs[:100])
+
+        # 如果主导格式占比超过 60%，检查不匹配的行
+        if dominant_pct > 0.6 and dominant not in ("mixed", "other"):
+            for i in range(len(result_df)):
+                if len(issues) >= max_issues:
+                    break
+                res_val = result_df.iloc[i][col]
+                if pd.isna(res_val):
+                    continue  # already caught above
+                res_str = str(res_val).strip()
+                if not res_str:
+                    continue
+                res_pat = _classify_format(res_str)
+                if res_pat != dominant and res_pat not in ("empty",):
+                    src_val = str(source_df.iloc[i][col]) if i < len(source_df) else "?"
+                    issues.append({
+                        "row": i, "column": str(col),
+                        "value": src_val[:60],
+                        "error": "第{}行 \"{}\" 的值 \"{}\" 未正确转换 (期望格式: {}, 实际: {})".format(
+                            i, str(col), res_str[:30], dominant, res_pat),
+                        "suggested_action": "跳过此行，或通过对话补充指令修正 \"{}\" 的值".format(str(col)),
+                    })
+
+    # ---- 3. 意外删除检测 (通过ID列对比) ----
+    id_col = None
+    for c in source_df.columns:
+        if c in result_df.columns:
+            cl = c.lower()
+            if 'id' in cl or '编号' in c:
+                id_col = c
+                break
+
+    if id_col and len(issues) < max_issues:
+        src_ids = set(source_df[id_col].dropna().astype(str))
+        res_ids = set(result_df[id_col].dropna().astype(str))
+        deleted = src_ids - res_ids
+        # 只报告少量删除(可能是意外的), 大量删除是用户要求的
+        if 0 < len(deleted) <= 30:
+            for did in list(deleted)[:max_issues - len(issues)]:
+                row_match = source_df[source_df[id_col].astype(str) == did]
+                if len(row_match) > 0:
+                    idx = row_match.index[0]
+                    issues.append({
+                        "row": int(idx), "column": "(整行)",
+                        "value": str(row_match.iloc[0].to_dict())[:100],
+                        "error": "第{}行 ({}={}) 在转换中被删除".format(int(idx), id_col, did),
+                        "suggested_action": "该行可能因数据不完整被自动删除",
+                    })
+
     return issues
+
+
+def _classify_format(val: str) -> str:
+    """分类值的格式模式。"""
+    import re
+    v = val.strip()
+    if not v:
+        return "empty"
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', v):
+        return "YYYY-MM-DD"
+    if re.match(r'^\d{8}$', v):
+        return "YYYYMMDD"
+    if re.match(r'^\d{4}/\d{2}/\d{2}$', v):
+        return "YYYY/MM/DD"
+    if re.match(r'^\d{4}年\d{1,2}月\d{1,2}日$', v):
+        return "YYYY年M月D日"
+    if re.match(r'^\d{11}$', v):
+        return "11digits"
+    if re.match(r'^\d{3}-\d{4}-\d{4}$', v):
+        return "XXX-XXXX-XXXX"
+    if re.match(r'^\d+\.\d{2}$', v):
+        return "decimal.2"
+    if re.match(r'^\d+$', v):
+        return "integer"
+    if '@' in v and '.' in v.split('@')[-1]:
+        return "email"
+    return "other"
 
 
 orchestrator = Orchestrator()
