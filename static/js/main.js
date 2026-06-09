@@ -97,7 +97,12 @@
       dom.panelSkills.querySelectorAll('.skill-name').forEach(function (nameEl) {
         nameEl.addEventListener('click', function (e) {
           e.stopPropagation();
-          var sid = nameEl.parentElement.parentElement.dataset.skillId;
+          e.preventDefault();
+          var card = nameEl.closest('.skill-card');
+          if (!card) { console.error('No parent .skill-card found'); return; }
+          var sid = card.getAttribute('data-skill-id');
+          console.log('Skill name clicked, id:', sid);
+          if (!sid) { console.error('No skill-id attribute'); return; }
           showSkillDetail(sid);
         });
       });
@@ -130,26 +135,50 @@
   }
 
   function showSkillDetail(skillId) {
-    var cards = dom.panelSkills.querySelectorAll('.skill-card');
-    var skill = null;
-    cards.forEach(function (c) {
-      if (c.dataset.skillId === skillId) {
-        skill = {
-          name: c.querySelector('.skill-name').textContent,
-          desc: c.querySelector('.skill-desc').textContent,
-          meta: c.querySelector('.skill-meta').textContent,
-        };
-      }
-    });
-    if (!skill) return;
+    console.log('showSkillDetail called with:', skillId);
+    try {
+      var cards = dom.panelSkills.querySelectorAll('.skill-card');
+      console.log('Found', cards.length, 'skill cards');
+      var skill = null;
+      cards.forEach(function (c) {
+        var cid = c.getAttribute('data-skill-id');
+        if (cid === skillId) {
+          var nameEl = c.querySelector('.skill-name');
+          var descEl = c.querySelector('.skill-desc');
+          var metaEl = c.querySelector('.skill-meta');
+          if (nameEl && descEl && metaEl) {
+            skill = {
+              name: nameEl.textContent,
+              desc: descEl.textContent,
+              meta: metaEl.textContent,
+            };
+          }
+        }
+      });
+      if (!skill) { console.error('Skill not found for id:', skillId); return; }
+      console.log('Showing detail for:', skill.name);
 
-    $('skillDetailTitle').textContent = skill.name;
-    var html = '';
-    html += '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:6px">' + esc(skill.desc) + '</p>';
-    html += '<p style="font-size:12px;color:var(--text-secondary)">' + esc(skill.meta) + '</p>';
-    html += '<p style="font-size:11px;color:var(--text-secondary);margin-top:10px">💡 点击技能卡片空白区域可应用此技能。</p>';
-    $('skillDetailBody').innerHTML = html;
-    $('skillDetailModal').style.display = '';
+      var titleEl = $('skillDetailTitle');
+      var bodyEl = $('skillDetailBody');
+      var modalEl = $('skillDetailModal');
+      console.log('Modal elements:', !!titleEl, !!bodyEl, !!modalEl);
+
+      if (!titleEl || !bodyEl || !modalEl) {
+        console.error('Modal elements missing!');
+        return;
+      }
+
+      titleEl.textContent = skill.name;
+      var html = '';
+      html += '<p style="font-size:13px;color:var(--text-secondary);margin-bottom:6px">' + esc(skill.desc) + '</p>';
+      html += '<p style="font-size:12px;color:var(--text-secondary)">' + esc(skill.meta) + '</p>';
+      html += '<p style="font-size:11px;color:var(--text-secondary);margin-top:10px">💡 点击技能卡片空白区域可应用此技能。</p>';
+      bodyEl.innerHTML = html;
+      modalEl.style.display = '';
+      console.log('Modal should be visible now');
+    } catch (err) {
+      console.error('showSkillDetail error:', err.message, err.stack);
+    }
   }
 
   function loadHistory() {
