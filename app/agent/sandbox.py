@@ -82,7 +82,11 @@ def execute(code: str, source_df: pd.DataFrame, timeout: int = 30) -> dict:
         'np': np,
         're': __import__('re'),
         'datetime': __import__('datetime'),
+        'timedelta': __import__('datetime').timedelta,
     }
+    # 确保 LLM 常用的 datetime 操作可用
+    safe_globals['datetime'].datetime = safe_globals['datetime'].datetime
+    safe_globals['datetime'].strptime = safe_globals['datetime'].datetime.strptime
 
     local_vars = {'df': source_df.copy()}
 

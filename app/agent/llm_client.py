@@ -11,7 +11,7 @@ _client = OpenAI(
 
 
 def _call_with_retry(messages, temperature, max_retries=3, is_json=False):
-    """调用 DeepSeek API，带重试。处理 5xx 和速率限制。"""
+    """调用 DeepSeek API，带重试。处理 5xx / 速率限制 / 错误响应体。"""
     last_error = None
     for attempt in range(max_retries):
         try:
@@ -24,7 +24,17 @@ def _call_with_retry(messages, temperature, max_retries=3, is_json=False):
             if is_json:
                 kwargs["response_format"] = {"type": "json_object"}
             response = _client.chat.completions.create(**kwargs)
-            return response.choices[0].message.content
+            content = response.choices[0].message.content or ""
+
+            # 检测 API 返回的错误文本 (某些代理返回 200 + 错误文本)
+            if is_json and len(content) < 300:
+                lower = content.lower()
+                if any(e in lower for e in ("internal server error", "service unavailable",
+                                              "rate limit", "too many requests", "timeout",
+                                              "bad gateway", "gateway timeout")):
+                    raise RuntimeError("API error response: " + content[:150])
+
+            return content
         except Exception as e:
             last_error = str(e)
             if attempt < max_retries - 1:
