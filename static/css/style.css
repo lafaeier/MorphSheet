@@ -704,38 +704,34 @@ td.cell-modified { background: var(--diff-modified); }
 }
 
 .code-panel-body {
-  padding: 10px 14px;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  color: var(--text-primary);
-  background: #0d1117;
-  overflow-x: auto;
-}
-
-.code-panel-body .comment { color: #8b949e; }
-.code-panel-body .keyword { color: #ff7b72; }
-.code-panel-body .string { color: #a5d6ff; }
-.code-panel-body .number { color: #79c0ff; }
-
-/* ---- Full-size code view (tab) ---- */
-.code-panel-body-full {
   padding: 14px 18px;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px; line-height: 1.6;
-  white-space: pre-wrap;
-  color: var(--text-primary);
-  background: #0d1117;
-  overflow: auto;
-  flex: 1;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+  font-size: 13px; line-height: 1.7;
+  white-space: pre-wrap; overflow-x: auto;
+  color: #e6edf3; background: #0d1117;
 }
-.code-panel-body-full .comment { color: #8b949e; }
-.code-panel-body-full .keyword { color: #ff7b72; }
-.code-panel-body-full .string { color: #a5d6ff; }
-.code-panel-body-full .number { color: #79c0ff; }
-.code-panel-body-full .func { color: #d2a8ff; }
-.code-panel-body .func { color: #d2a8ff; }
+.code-panel-body .comment { color: #8b949e; font-style: italic; }
+.code-panel-body .keyword { color: #ff7b72; font-weight: 600; }
+.code-panel-body .string  { color: #a5d6ff; }
+.code-panel-body .number  { color: #79c0ff; }
+
+/* ---- AI Code Tab (full view) ---- */
+.code-panel-body-full {
+  padding: 20px 24px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+  font-size: 14px; line-height: 1.8;
+  white-space: pre-wrap; word-break: break-word;
+  color: #e6edf3;
+  background: #0d1117;
+  overflow: auto; flex: 1;
+  border-left: 3px solid var(--accent);
+}
+.code-panel-body-full .comment { color: #8b949e; font-style: italic; }
+.code-panel-body-full .keyword { color: #ff7b72; font-weight: 600; }
+.code-panel-body-full .string  { color: #a5d6ff; }
+.code-panel-body-full .number  { color: #79c0ff; }
+.code-panel-body-full .func    { color: #d2a8ff; }
+.code-panel-body .func          { color: #d2a8ff; }
 
 /* ---- Toast ---- */
 .toast-container {
@@ -746,10 +742,10 @@ td.cell-modified { background: var(--diff-modified); }
   padding: 10px 20px; border-radius: 8px; font-size: 13px;
   color: #fff; animation: fadeIn 0.3s ease; max-width: 360px;
 }
-.toast.info { background: #4cc9f0; color: #1a1a2e; }
-.toast.success { background: #06d6a0; color: #1a1a2e; }
-.toast.warning { background: #ffd166; color: #1a1a2e; }
-.toast.error { background: #ef476f; }
+.toast.info { background: var(--accent); color: #fff; }
+.toast.success { background: var(--success); color: #fff; }
+.toast.warning { background: var(--warning); color: #fff; }
+.toast.error { background: var(--danger); color: #fff; }
 
 /* ---- Sidebar items ---- */
 .history-item, .skill-card {
