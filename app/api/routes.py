@@ -14,7 +14,10 @@ from app.agent.orchestrator import orchestrator
 from app.api.ws import send_to_task
 from app.storage import database, skill_store
 from app.config import settings
+from app.logger import get_logger
+import traceback
 
+log = get_logger(__name__)
 router = APIRouter()
 
 
@@ -42,9 +45,12 @@ async def upload(file: UploadFile = File(...)):
     with open(file_path, 'wb') as f:
         f.write(content)
 
-    df = file_reader.read(file_path)
-    schema_info = schema_module.extract(df)
-    preview = schema_module.to_preview(df)
+    try:
+        df = file_reader.read(file_path)
+        schema_info = schema_module.extract(df)
+        preview = schema_module.to_preview(df)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"文件读取失败: {str(e)}")
 
     orchestrator.register_file(file_id, file.filename, file_path, df)
 
@@ -69,12 +75,16 @@ async def convert(req: ConvertRequest):
     if not orchestrator.get_file(req.file_id):
         raise HTTPException(status_code=404, detail="文件不存在")
 
-    result = orchestrator.start_convert(
-        file_id=req.file_id,
-        instructions=req.instructions,
-        websocket_send=None,
-        use_skill_id=req.use_skill_id,
-    )
+    try:
+        result = orchestrator.start_convert(
+            file_id=req.file_id,
+            instructions=req.instructions,
+            websocket_send=None,
+            use_skill_id=req.use_skill_id,
+        )
+    except Exception as e:
+        log.error("转换异常: %s\n%s", e, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"转换异常: {str(e)}")
 
     return ConvertResponse(**result)
 
@@ -90,7 +100,10 @@ async def confirm_action(req: ConfirmActionRequest):
         return {"status": "cancelled"}
 
     # accept_suggestion / skip_row: 移除坏行
-    result = orchestrator.handle_dirty_data(req.task_id, req.action)
+    try:
+        result = orchestrator.handle_dirty_data(req.task_id, req.action)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"处理脏数据异常: {str(e)}")
     return result
 
 

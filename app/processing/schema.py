@@ -145,6 +145,8 @@ def _to_native(val):
         return bool(val)
     if isinstance(val, np.ndarray):
         return val.tolist()
+    if isinstance(val, pd.Timestamp):
+        return val.strftime('%Y-%m-%d %H:%M:%S')
     return val
 
 
@@ -162,6 +164,8 @@ def to_json_safe(obj):
         return bool(obj)
     if isinstance(obj, np.ndarray):
         return obj.tolist()
+    if isinstance(obj, pd.Timestamp):
+        return obj.strftime('%Y-%m-%d %H:%M:%S')
     if pd.isna(obj):
         return None
     return obj

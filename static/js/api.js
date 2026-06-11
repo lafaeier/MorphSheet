@@ -2,15 +2,22 @@
  * MorphSheet API Client
  */
 
+async function _safeError(res, fallback) {
+  try {
+    const text = await res.text();
+    const err = JSON.parse(text);
+    return new Error(err.detail || err.message || fallback);
+  } catch (_) {
+    return new Error(fallback + ' (HTTP ' + res.status + ')');
+  }
+}
+
 const API = {
   async upload(file) {
     const fd = new FormData();
     fd.append('file', file);
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Upload failed');
-    }
+    if (!res.ok) throw await _safeError(res, '上传失败');
     return res.json();
   },
 
@@ -24,7 +31,7 @@ const API = {
         target_encoding: targetEncoding,
       }),
     });
-    if (!res.ok) throw await res.json();
+    if (!res.ok) throw await _safeError(res, '设置目标格式失败');
     return res.json();
   },
 
@@ -38,10 +45,7 @@ const API = {
         use_skill_id: skillId,
       }),
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Convert failed');
-    }
+    if (!res.ok) throw await _safeError(res, '转换失败');
     return res.json();
   },
 
@@ -51,7 +55,7 @@ const API = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ task_id: taskId, action, overrides }),
     });
-    if (!res.ok) throw await res.json();
+    if (!res.ok) throw await _safeError(res, '操作失败');
     return res.json();
   },
 
@@ -65,7 +69,7 @@ const API = {
         skill_name: skillName,
       }),
     });
-    if (!res.ok) throw await res.json();
+    if (!res.ok) throw await _safeError(res, '导出失败');
     return res.json();
   },
 

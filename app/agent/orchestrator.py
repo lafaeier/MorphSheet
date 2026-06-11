@@ -329,6 +329,24 @@ def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
     所有 issue 都带 actionable=True，表示存在于结果中可操作。"""
     issues = []
 
+    # 建立结果列 → 源列的映射 (处理 LLM 重命名列名的情况)
+    col_map = {}  # {result_col: source_col or None}
+    for rc in result_df.columns:
+        if rc in source_df.columns:
+            col_map[rc] = rc
+        else:
+            # 尝试按位置匹配 (列数相同时)
+            rpos = list(result_df.columns).index(rc)
+            if rpos < len(source_df.columns):
+                col_map[rc] = source_df.columns[rpos]
+
+    def _src_val(i, res_col):
+        """安全获取源 DataFrame 中与结果列对应的值。"""
+        sc = col_map.get(res_col)
+        if sc and i < len(source_df):
+            return source_df.iloc[i][sc]
+        return None
+
     # ---- 0. 空值/空白检测 ----
     for col in result_df.columns:
         if len(issues) >= max_issues:
@@ -337,14 +355,13 @@ def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
             if len(issues) >= max_issues:
                 break
             res_val = result_df.iloc[i][col]
-            # 检测空字符串或仅空白
             if isinstance(res_val, str) and res_val.strip() == '':
-                src_val = source_df.iloc[i][col] if i < len(source_df) else None
-                if src_val is not None and str(src_val).strip() != '':
+                sv = _src_val(i, col)
+                if sv is not None and str(sv).strip() != '':
                     issues.append({
                         "row": i, "column": str(col),
-                        "value": str(src_val)[:60],
-                        "error": "第{}行 \"{}\" 原值 \"{}\" 转换后变为空字符串".format(i, str(col), str(src_val)[:30]),
+                        "value": str(sv)[:60],
+                        "error": "第{}行 \"{}\" 原值 \"{}\" 转换后变为空字符串".format(i, str(col), str(sv)[:30]),
                         "suggested_action": "检查该行数据是否有效",
                     })
 
@@ -370,13 +387,11 @@ def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
     for col in result_df.columns:
         if len(issues) >= max_issues:
             break
-        # 取结果中非空值分析主导格式
         valid_vals = result_df[col].dropna()
         valid_strs = [str(v) for v in valid_vals if str(v).strip()]
         if len(valid_strs) < 5:
             continue
 
-        # 判断该列的主导格式
         patterns = {}
         for v in valid_strs[:100]:
             p = _classify_format(v)
@@ -386,23 +401,23 @@ def _detect_coerced_data(source_df: pd.DataFrame, result_df: pd.DataFrame,
         dominant = max(patterns, key=patterns.get)
         dominant_pct = patterns[dominant] / len(valid_strs[:100])
 
-        # 如果主导格式占比超过 60%，检查不匹配的行
         if dominant_pct > 0.6 and dominant not in ("mixed", "other"):
             for i in range(len(result_df)):
                 if len(issues) >= max_issues:
                     break
                 res_val = result_df.iloc[i][col]
                 if pd.isna(res_val):
-                    continue  # already caught above
+                    continue
                 res_str = str(res_val).strip()
                 if not res_str:
                     continue
                 res_pat = _classify_format(res_str)
                 if res_pat != dominant and res_pat not in ("empty",):
-                    src_val = str(source_df.iloc[i][col]) if i < len(source_df) else "?"
+                    sv = _src_val(i, col)
+                    src_str = str(sv)[:60] if sv is not None else "?"
                     issues.append({
                         "row": i, "column": str(col),
-                        "value": src_val[:60],
+                        "value": src_str,
                         "error": "第{}行 \"{}\" 的值 \"{}\" 未正确转换 (期望格式: {}, 实际: {})".format(
                             i, str(col), res_str[:30], dominant, res_pat),
                         "suggested_action": "跳过此行，或通过对话补充指令修正 \"{}\" 的值".format(str(col)),
@@ -555,14 +570,24 @@ def _find_numeric_columns(df: pd.DataFrame) -> list[str]:
 
 
 def _find_id_col(source_df: pd.DataFrame, result_df: pd.DataFrame) -> str | None:
-    """在两个DataFrame中找到共同的ID列。"""
+    """在两个DataFrame中找到ID列（可处理列名被重命名的情况）。"""
     common = set(source_df.columns) & set(result_df.columns)
-    id_patterns = ['id', 'ID', '编号', 'CUST', 'EMP', '员工']
+    id_patterns = ['id', 'ID', '编号', '序号', 'code', 'Code', 'CUST', 'EMP',
+                   '员工', '客户', '学号', '工号', 'no', 'NO', 'No', 'key', 'Key']
+    # 1. 公共列中按模式匹配
     for col in common:
         col_lower = col.lower()
         for pat in id_patterns:
             if pat.lower() in col_lower:
-                return col
+                if source_df[col].nunique() == len(source_df):
+                    return col
+    # 2. 公共列中第一列为全唯一值
+    common_list = [c for c in source_df.columns if c in common]
+    if common_list:
+        first_col = common_list[0]
+        if source_df[first_col].nunique() == len(source_df):
+            return first_col
+    # 3. 列名被重命名 — 值重叠但列名不同，无法用单一列名索引两个DataFrame
     return None
 
 

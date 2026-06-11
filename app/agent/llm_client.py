@@ -27,7 +27,9 @@ def _call_with_retry(messages, temperature, max_retries=3, is_json=False):
             content = response.choices[0].message.content or ""
 
             # 检测 API 返回的错误文本 (某些代理返回 200 + 错误文本)
-            if is_json and len(content) < 300:
+            if is_json and not content.startswith('{') and not content.startswith('['):
+                raise RuntimeError("API returned non-JSON: " + content[:200])
+            if is_json:
                 lower = content.lower()
                 if any(e in lower for e in ("internal server error", "service unavailable",
                                               "rate limit", "too many requests", "timeout",

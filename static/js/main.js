@@ -539,12 +539,31 @@
 
   function refreshChat() {
     state.conversationHistory = [];
+    state.currentTask = null;
+    state.allSourceRows = [];
+    state.allTargetRows = [];
+    state.diffLoadedCount = 0;
+    dom.chatInput.value = '';
     dom.chatMsgs.innerHTML = '<div class="message system"><div class="message-content">对话已刷新。请上传文件并输入清洗指令。</div></div>';
+    dom.sourceTable.innerHTML = '';
+    dom.targetTable.innerHTML = '';
+    dom.codePanelBody.innerHTML = '';
+    dom.uploadText.textContent = '拖拽文件到此处，或点击选择';
+    dom.uploadIcon.textContent = '📂';
+    dom.btnConvert.disabled = true;
+    dom.btnSend.disabled = true;
+    dom.chatInput.disabled = true;
+    dom.chatInput.placeholder = '请先上传文件...';
+    state.currentFile = null;
     hideAlert();
     hideExportButtons();
     setStep('idle');
-    state.currentTask = null;
-    toast('对话已刷新', 'info');
+    // 禁用 diff/code 标签页
+    dom.mainTabBar.querySelectorAll('.main-tab').forEach(function (b) {
+      if (b.dataset.view === 'diff' || b.dataset.view === 'code' || b.dataset.view === 'preview') b.disabled = true;
+    });
+    switchTab('chat');
+    toast('对话已刷新，请重新上传文件', 'info');
   }
 
   function resetAfterExport() {
